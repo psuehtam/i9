@@ -1,0 +1,19 @@
+{
+  "type": "derived_dataset_revision",
+  "parent_database": "data/i9.db",
+  "affected_rows": 1874,
+  "fleet_totals_unchanged": true,
+  "reason": "PBE Veicular 2026 identifica Dolphin GS 180EV; ficha BYD GS de 09/07/2026 confirma bateria 44,9 kWh. Aplicação restrita a 2026. Base original preservada em data/i9.db.",
+  "created_at": "2026-09-09T19:06:04.392754+00:00",
+  "new_database": "C:\\Users\\mathe\\Documents\\GitHub\\i9\\data\\i9-validated-v2.db",
+  "totals": [
+    [
+      "2026-06",
+      205816
+    ],
+    [
+      "2026-07",
+      222373
+    ]
+  ]
+}

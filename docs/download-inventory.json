@@ -1,0 +1,396 @@
+{
+  "created_at": "2026-09-09T19:14:01.969893+00:00",
+  "total_transferred_body_bytes": 276543042,
+  "new_file_bytes": 274642619,
+  "api_body_bytes": 1900423,
+  "new_files": [
+    {
+      "recorded_at": "2026-09-09T18:44:53.395723+00:00",
+      "kind": "file",
+      "url": "https://www.gov.br/inmetro/pt-br/assuntos/regulamentacao/avaliacao-da-conformidade/programa-brasileiro-de-etiquetagem/tabelas-de-eficiencia-energetica/veiculos-automotivos-pbe-veicular/mascara-pbev-2026_19_jan-rev01.pdf/@@download/file",
+      "path": "data\\raw\\inmetro-pbev-2026.pdf",
+      "reused": false,
+      "file_bytes": 3387564,
+      "downloaded_bytes": 3387564,
+      "seconds": 2.533,
+      "sha256": "43e928f89a526f7b59013faca3501b2b0716e5a8cdc2e097b8653638aa688ba0"
+    },
+    {
+      "recorded_at": "2026-09-09T18:45:07.105737+00:00",
+      "kind": "file",
+      "url": "https://dados.transportes.gov.br/dataset/12686da0-3d71-4499-b432-d270f785c907/resource/85150148-6a47-4600-8b6a-061871c980f7/download/i_frota_por_uf_municipio_marca_e_modelo_ano_julho_2026.zip",
+      "path": "data\\raw\\2026-07\\senatran\\85150148-6a47-4600-8b6a-061871c980f7.zip",
+      "reused": false,
+      "file_bytes": 135907513,
+      "downloaded_bytes": 135907513,
+      "seconds": 43.265,
+      "sha256": "93e8ef78b6ea028a3a201be8c0006d2a866596e6ad34dae13cecda2a46b7e0d5"
+    },
+    {
+      "recorded_at": "2026-09-09T18:49:43.023182+00:00",
+      "kind": "file",
+      "url": "https://dados.transportes.gov.br/dataset/12686da0-3d71-4499-b432-d270f785c907/resource/c3ea6833-046b-46ed-afce-1ceaecb8b5cb/download/i_frota_por_uf_municipio_marca_e_modelo_ano_junho_2026.zip",
+      "path": "data\\raw\\2026-06\\senatran\\c3ea6833-046b-46ed-afce-1ceaecb8b5cb.zip",
+      "reused": false,
+      "file_bytes": 135347542,
+      "downloaded_bytes": 135347542,
+      "seconds": 30.246,
+      "sha256": "49bc762dfc387ccc048894c950c541d2f80d0c9d185f9ea3d93fd7ae60010744"
+    }
+  ],
+  "archive_sizes": [
+    {
+      "file": "data\\raw\\2026-06\\senatran\\c3ea6833-046b-46ed-afce-1ceaecb8b5cb.zip",
+      "compressed_bytes": 135347542,
+      "uncompressed_bytes": 1206022916,
+      "members": [
+        "I_Frota_por_UF_Municipio_Marca_e_Modelo_Ano_Junho_2026.TXT"
+      ]
+    },
+    {
+      "file": "data\\raw\\2026-07\\senatran\\85150148-6a47-4600-8b6a-061871c980f7.zip",
+      "compressed_bytes": 135907513,
+      "uncompressed_bytes": 1210999927,
+      "members": [
+        "I_Frota_por_UF_Municipio_Marca_e_Modelo_Ano_Julho_2026.TXT"
+      ]
+    }
+  ],
+  "successful_runs": [
+    {
+      "id": "e79555d0-0880-475e-9752-ee432d92b9bb",
+      "reference": "2026-07",
+      "started_at": "2026-09-09T18:54:06.407805+00:00",
+      "finished_at": "2026-09-09T18:56:08.189366+00:00",
+      "status": "SUCESSO",
+      "stage": "Publicado",
+      "raw_rows": 22690877,
+      "bev_rows": 20996,
+      "matched_rows": 0,
+      "error": null,
+      "details": {
+        "excluded_unclassified_or_non_bev_rows": 22668732,
+        "scope": "Recorte de 12 famílias BEV revisadas. Outros modelos não classificados ficam fora do recorte; não representa o total nacional de BEVs.",
+        "classification_source": "https://www.gov.br/inmetro/pt-br/assuntos/regulamentacao/avaliacao-da-conformidade/programa-brasileiro-de-etiquetagem/tabelas-de-eficiencia-energetica/veiculos-automotivos-pbe-veicular/mascara-pbev-2026_19_jan-rev01.pdf/@@download/file",
+        "sha256": "93e8ef78b6ea028a3a201be8c0006d2a866596e6ad34dae13cecda2a46b7e0d5",
+        "timings": {
+          "locations_seconds": 1.642,
+          "download_seconds": 0.516,
+          "processing_seconds": 118.182,
+          "total_seconds": 121.989
+        },
+        "download_url": "https://dados.transportes.gov.br/dataset/12686da0-3d71-4499-b432-d270f785c907/resource/85150148-6a47-4600-8b6a-061871c980f7/download/i_frota_por_uf_municipio_marca_e_modelo_ano_julho_2026.zip",
+        "file_bytes": 135907513
+      }
+    },
+    {
+      "id": "c405f9f4-b644-482f-9e63-62c64e63bccc",
+      "reference": "2026-06",
+      "started_at": "2026-09-09T18:57:05.499928+00:00",
+      "finished_at": "2026-09-09T18:59:48.543954+00:00",
+      "status": "SUCESSO",
+      "stage": "Publicado",
+      "raw_rows": 22601316,
+      "bev_rows": 20087,
+      "matched_rows": 0,
+      "error": null,
+      "details": {
+        "excluded_unclassified_or_non_bev_rows": 22580157,
+        "scope": "Recorte de 12 famílias BEV revisadas. Outros modelos não classificados ficam fora do recorte; não representa o total nacional de BEVs.",
+        "classification_source": "https://www.gov.br/inmetro/pt-br/assuntos/regulamentacao/avaliacao-da-conformidade/programa-brasileiro-de-etiquetagem/tabelas-de-eficiencia-energetica/veiculos-automotivos-pbe-veicular/mascara-pbev-2026_19_jan-rev01.pdf/@@download/file",
+        "sha256": "49bc762dfc387ccc048894c950c541d2f80d0c9d185f9ea3d93fd7ae60010744",
+        "timings": {
+          "locations_seconds": 1.922,
+          "download_seconds": 0.543,
+          "processing_seconds": 158.783,
+          "total_seconds": 163.244
+        },
+        "download_url": "https://dados.transportes.gov.br/dataset/12686da0-3d71-4499-b432-d270f785c907/resource/c3ea6833-046b-46ed-afce-1ceaecb8b5cb/download/i_frota_por_uf_municipio_marca_e_modelo_ano_junho_2026.zip",
+        "file_bytes": 135347542
+      }
+    }
+  ],
+  "transfer_events": [
+    {
+      "recorded_at": "2026-09-09T18:44:23.155058+00:00",
+      "kind": "api_json",
+      "url": "https://dados.transportes.gov.br/api/3/action/package_show?id=registro-nacional-de-veiculos-automotores-renavam",
+      "status": 200,
+      "payload_bytes": 139174,
+      "wire_body_bytes": 139174,
+      "seconds": 0.359
+    },
+    {
+      "recorded_at": "2026-09-09T18:44:23.709220+00:00",
+      "kind": "api_json",
+      "url": "https://servicodados.ibge.gov.br/api/v1/localidades/municipios?view=nivelado",
+      "status": 200,
+      "payload_bytes": 2372050,
+      "wire_body_bytes": 112459,
+      "seconds": 0.235
+    },
+    {
+      "recorded_at": "2026-09-09T18:44:53.395723+00:00",
+      "kind": "file",
+      "url": "https://www.gov.br/inmetro/pt-br/assuntos/regulamentacao/avaliacao-da-conformidade/programa-brasileiro-de-etiquetagem/tabelas-de-eficiencia-energetica/veiculos-automotivos-pbe-veicular/mascara-pbev-2026_19_jan-rev01.pdf/@@download/file",
+      "path": "data\\raw\\inmetro-pbev-2026.pdf",
+      "reused": false,
+      "file_bytes": 3387564,
+      "downloaded_bytes": 3387564,
+      "seconds": 2.533,
+      "sha256": "43e928f89a526f7b59013faca3501b2b0716e5a8cdc2e097b8653638aa688ba0"
+    },
+    {
+      "recorded_at": "2026-09-09T18:44:53.403658+00:00",
+      "kind": "file",
+      "url": "https://www.byd.com/material/__CN/byd-site/br/fichas-tecnicas-2026/update-13-07-2026/07-13-2026---ficha-txiunica/BYD_DolphinGS_V2.pdf",
+      "path": "data\\raw\\dolphin-gs-2026.pdf",
+      "reused": true,
+      "file_bytes": 1491049,
+      "downloaded_bytes": 0,
+      "seconds": 0.006,
+      "sha256": "9c8d7749590ae685362e9ad1a4b0600e12639d771e9f5b229ceaf6b4209503de"
+    },
+    {
+      "recorded_at": "2026-09-09T18:45:07.105737+00:00",
+      "kind": "file",
+      "url": "https://dados.transportes.gov.br/dataset/12686da0-3d71-4499-b432-d270f785c907/resource/85150148-6a47-4600-8b6a-061871c980f7/download/i_frota_por_uf_municipio_marca_e_modelo_ano_julho_2026.zip",
+      "path": "data\\raw\\2026-07\\senatran\\85150148-6a47-4600-8b6a-061871c980f7.zip",
+      "reused": false,
+      "file_bytes": 135907513,
+      "downloaded_bytes": 135907513,
+      "seconds": 43.265,
+      "sha256": "93e8ef78b6ea028a3a201be8c0006d2a866596e6ad34dae13cecda2a46b7e0d5"
+    },
+    {
+      "recorded_at": "2026-09-09T18:46:01.959671+00:00",
+      "kind": "api_json",
+      "url": "https://dados.transportes.gov.br/api/3/action/package_show?id=registro-nacional-de-veiculos-automotores-renavam",
+      "status": 200,
+      "payload_bytes": 139174,
+      "wire_body_bytes": 139174,
+      "seconds": 0.268
+    },
+    {
+      "recorded_at": "2026-09-09T18:46:02.644370+00:00",
+      "kind": "api_json",
+      "url": "https://servicodados.ibge.gov.br/api/v1/localidades/municipios?view=nivelado",
+      "status": 200,
+      "payload_bytes": 2372050,
+      "wire_body_bytes": 112459,
+      "seconds": 0.202
+    },
+    {
+      "recorded_at": "2026-09-09T18:46:02.931297+00:00",
+      "kind": "file",
+      "url": "https://dados.transportes.gov.br/dataset/12686da0-3d71-4499-b432-d270f785c907/resource/85150148-6a47-4600-8b6a-061871c980f7/download/i_frota_por_uf_municipio_marca_e_modelo_ano_julho_2026.zip",
+      "path": "data\\raw\\2026-07\\senatran\\85150148-6a47-4600-8b6a-061871c980f7.zip",
+      "reused": true,
+      "file_bytes": 135907513,
+      "downloaded_bytes": 0,
+      "seconds": 0.164,
+      "sha256": "93e8ef78b6ea028a3a201be8c0006d2a866596e6ad34dae13cecda2a46b7e0d5"
+    },
+    {
+      "recorded_at": "2026-09-09T18:47:04.988006+00:00",
+      "kind": "api_json",
+      "url": "https://dados.transportes.gov.br/api/3/action/package_show?id=registro-nacional-de-veiculos-automotores-renavam",
+      "status": 200,
+      "payload_bytes": 139174,
+      "wire_body_bytes": 139174,
+      "seconds": 0.202
+    },
+    {
+      "recorded_at": "2026-09-09T18:47:05.544015+00:00",
+      "kind": "api_json",
+      "url": "https://servicodados.ibge.gov.br/api/v1/localidades/municipios?view=nivelado",
+      "status": 200,
+      "payload_bytes": 2372050,
+      "wire_body_bytes": 112459,
+      "seconds": 0.196
+    },
+    {
+      "recorded_at": "2026-09-09T18:47:05.827134+00:00",
+      "kind": "file",
+      "url": "https://dados.transportes.gov.br/dataset/12686da0-3d71-4499-b432-d270f785c907/resource/85150148-6a47-4600-8b6a-061871c980f7/download/i_frota_por_uf_municipio_marca_e_modelo_ano_julho_2026.zip",
+      "path": "data\\raw\\2026-07\\senatran\\85150148-6a47-4600-8b6a-061871c980f7.zip",
+      "reused": true,
+      "file_bytes": 135907513,
+      "downloaded_bytes": 0,
+      "seconds": 0.167,
+      "sha256": "93e8ef78b6ea028a3a201be8c0006d2a866596e6ad34dae13cecda2a46b7e0d5"
+    },
+    {
+      "recorded_at": "2026-09-09T18:49:12.713218+00:00",
+      "kind": "api_json",
+      "url": "https://dados.transportes.gov.br/api/3/action/package_show?id=registro-nacional-de-veiculos-automotores-renavam",
+      "status": 200,
+      "payload_bytes": 139174,
+      "wire_body_bytes": 139174,
+      "seconds": 0.262
+    },
+    {
+      "recorded_at": "2026-09-09T18:49:43.023182+00:00",
+      "kind": "file",
+      "url": "https://dados.transportes.gov.br/dataset/12686da0-3d71-4499-b432-d270f785c907/resource/c3ea6833-046b-46ed-afce-1ceaecb8b5cb/download/i_frota_por_uf_municipio_marca_e_modelo_ano_junho_2026.zip",
+      "path": "data\\raw\\2026-06\\senatran\\c3ea6833-046b-46ed-afce-1ceaecb8b5cb.zip",
+      "reused": false,
+      "file_bytes": 135347542,
+      "downloaded_bytes": 135347542,
+      "seconds": 30.246,
+      "sha256": "49bc762dfc387ccc048894c950c541d2f80d0c9d185f9ea3d93fd7ae60010744"
+    },
+    {
+      "recorded_at": "2026-09-09T18:52:47.404824+00:00",
+      "kind": "api_json",
+      "url": "https://dados.transportes.gov.br/api/3/action/package_show?id=registro-nacional-de-veiculos-automotores-renavam",
+      "status": 200,
+      "payload_bytes": 139174,
+      "wire_body_bytes": 139174,
+      "seconds": 0.341
+    },
+    {
+      "recorded_at": "2026-09-09T18:52:48.780983+00:00",
+      "kind": "api_json",
+      "url": "https://servicodados.ibge.gov.br/api/v1/localidades/municipios?view=nivelado",
+      "status": 200,
+      "payload_bytes": 2372050,
+      "wire_body_bytes": 112459,
+      "seconds": 0.244
+    },
+    {
+      "recorded_at": "2026-09-09T18:52:49.667722+00:00",
+      "kind": "file",
+      "url": "https://dados.transportes.gov.br/dataset/12686da0-3d71-4499-b432-d270f785c907/resource/85150148-6a47-4600-8b6a-061871c980f7/download/i_frota_por_uf_municipio_marca_e_modelo_ano_julho_2026.zip",
+      "path": "data\\raw\\2026-07\\senatran\\85150148-6a47-4600-8b6a-061871c980f7.zip",
+      "reused": true,
+      "file_bytes": 135907513,
+      "downloaded_bytes": 0,
+      "seconds": 0.51,
+      "sha256": "93e8ef78b6ea028a3a201be8c0006d2a866596e6ad34dae13cecda2a46b7e0d5"
+    },
+    {
+      "recorded_at": "2026-09-09T18:54:08.008779+00:00",
+      "kind": "api_json",
+      "url": "https://dados.transportes.gov.br/api/3/action/package_show?id=registro-nacional-de-veiculos-automotores-renavam",
+      "status": 200,
+      "payload_bytes": 139174,
+      "wire_body_bytes": 139174,
+      "seconds": 0.274
+    },
+    {
+      "recorded_at": "2026-09-09T18:54:09.335373+00:00",
+      "kind": "api_json",
+      "url": "https://servicodados.ibge.gov.br/api/v1/localidades/municipios?view=nivelado",
+      "status": 200,
+      "payload_bytes": 2372050,
+      "wire_body_bytes": 112459,
+      "seconds": 0.155
+    },
+    {
+      "recorded_at": "2026-09-09T18:54:10.221672+00:00",
+      "kind": "file",
+      "url": "https://dados.transportes.gov.br/dataset/12686da0-3d71-4499-b432-d270f785c907/resource/85150148-6a47-4600-8b6a-061871c980f7/download/i_frota_por_uf_municipio_marca_e_modelo_ano_julho_2026.zip",
+      "path": "data\\raw\\2026-07\\senatran\\85150148-6a47-4600-8b6a-061871c980f7.zip",
+      "reused": true,
+      "file_bytes": 135907513,
+      "downloaded_bytes": 0,
+      "seconds": 0.515,
+      "sha256": "93e8ef78b6ea028a3a201be8c0006d2a866596e6ad34dae13cecda2a46b7e0d5"
+    },
+    {
+      "recorded_at": "2026-09-09T18:57:07.452741+00:00",
+      "kind": "api_json",
+      "url": "https://dados.transportes.gov.br/api/3/action/package_show?id=registro-nacional-de-veiculos-automotores-renavam",
+      "status": 200,
+      "payload_bytes": 139174,
+      "wire_body_bytes": 139174,
+      "seconds": 0.282
+    },
+    {
+      "recorded_at": "2026-09-09T18:57:09.017442+00:00",
+      "kind": "api_json",
+      "url": "https://servicodados.ibge.gov.br/api/v1/localidades/municipios?view=nivelado",
+      "status": 200,
+      "payload_bytes": 2372050,
+      "wire_body_bytes": 112459,
+      "seconds": 0.193
+    },
+    {
+      "recorded_at": "2026-09-09T18:57:09.983329+00:00",
+      "kind": "file",
+      "url": "https://dados.transportes.gov.br/dataset/12686da0-3d71-4499-b432-d270f785c907/resource/c3ea6833-046b-46ed-afce-1ceaecb8b5cb/download/i_frota_por_uf_municipio_marca_e_modelo_ano_junho_2026.zip",
+      "path": "data\\raw\\2026-06\\senatran\\c3ea6833-046b-46ed-afce-1ceaecb8b5cb.zip",
+      "reused": true,
+      "file_bytes": 135347542,
+      "downloaded_bytes": 0,
+      "seconds": 0.541,
+      "sha256": "49bc762dfc387ccc048894c950c541d2f80d0c9d185f9ea3d93fd7ae60010744"
+    },
+    {
+      "recorded_at": "2026-09-09T18:58:56.099663+00:00",
+      "kind": "file",
+      "url": "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application/vnd.geo%2Bjson&qualidade=minima&intrarregiao=UF",
+      "path": "dashboard\\public\\br-uf.geojson",
+      "reused": true,
+      "file_bytes": 108687,
+      "downloaded_bytes": 0,
+      "seconds": 0.003,
+      "sha256": "6d0125fce119ea0c78bf2a4a02aa18e4dd2a61a0b648fa555bc82a9aa7b6dcea"
+    },
+    {
+      "recorded_at": "2026-09-09T18:58:57.973430+00:00",
+      "kind": "api_json",
+      "url": "https://api.github.com/repos/open-ev-data/open-ev-data-dataset/commits/main",
+      "status": 200,
+      "payload_bytes": 11541,
+      "wire_body_bytes": 2397,
+      "seconds": 0.392
+    },
+    {
+      "recorded_at": "2026-09-09T18:59:00.645039+00:00",
+      "kind": "api_json",
+      "url": "https://api.github.com/repos/open-ev-data/open-ev-data-dataset/git/trees/8edb266da3b2c4424dd031e248468ba5d445da5d?recursive=1",
+      "status": 200,
+      "payload_bytes": 606487,
+      "wire_body_bytes": 99266,
+      "seconds": 0.452
+    },
+    {
+      "recorded_at": "2026-09-09T18:59:02.961699+00:00",
+      "kind": "api_json",
+      "url": "https://api.github.com/repos/open-ev-data/open-ev-data-dataset/contents/src/byd/dolphin/2025/dolphin.json?ref=8edb266da3b2c4424dd031e248468ba5d445da5d",
+      "status": 200,
+      "payload_bytes": 5008,
+      "wire_body_bytes": 5008,
+      "seconds": 0.486
+    },
+    {
+      "recorded_at": "2026-09-09T18:59:05.228411+00:00",
+      "kind": "api_json",
+      "url": "https://api.github.com/repos/open-ev-data/open-ev-data-dataset/contents/src/byd/dolphin/2025/dolphin_boost.json?ref=8edb266da3b2c4424dd031e248468ba5d445da5d",
+      "status": 200,
+      "payload_bytes": 2399,
+      "wire_body_bytes": 2399,
+      "seconds": 0.298
+    },
+    {
+      "recorded_at": "2026-09-09T18:59:07.390008+00:00",
+      "kind": "api_json",
+      "url": "https://api.github.com/repos/open-ev-data/open-ev-data-dataset/contents/src/byd/dolphin/2025/dolphin_extended_range.json?ref=8edb266da3b2c4424dd031e248468ba5d445da5d",
+      "status": 200,
+      "payload_bytes": 3207,
+      "wire_body_bytes": 3207,
+      "seconds": 0.267
+    },
+    {
+      "recorded_at": "2026-09-09T19:08:09.679563+00:00",
+      "kind": "api_json",
+      "url": "https://dados.transportes.gov.br/api/3/action/package_show?id=registro-nacional-de-veiculos-automotores-renavam",
+      "status": 200,
+      "payload_bytes": 139174,
+      "wire_body_bytes": 139174,
+      "seconds": 0.378
+    }
+  ]
+}

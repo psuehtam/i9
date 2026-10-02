@@ -1,0 +1,11 @@
+{
+  "role": "607 registros BR baixados; aguardam revisão técnica por versão.",
+  "release": "v1.24.0",
+  "total_records": 1189,
+  "br_records": 607,
+  "file_bytes": 3175964,
+  "sha256": "38c4f579c8fb4edf27921faa79d9eb27069f522d088578e95637fa9dfe4ef786",
+  "download_url": "https://github.com/open-ev-data/open-ev-data-dataset/releases/download/v1.24.0/open-ev-data-v1.24.0.json",
+  "inserted": 0,
+  "checked_at": "2026-09-10T12:18:17.960114+00:00"
+}

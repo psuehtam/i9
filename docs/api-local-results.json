@@ -1,0 +1,85 @@
+[
+  {
+    "path": "/health",
+    "status": 200,
+    "bytes": 35,
+    "checked_at": "2026-09-09T18:37:19.170511+00:00"
+  },
+  {
+    "path": "/api/v1/fleet?limit=25",
+    "status": 200,
+    "bytes": 61,
+    "checked_at": "2026-09-09T18:37:19.183831+00:00"
+  },
+  {
+    "path": "/api/v1/models",
+    "status": 200,
+    "bytes": 419,
+    "checked_at": "2026-09-09T18:37:19.191133+00:00"
+  },
+  {
+    "path": "/api/v1/batteries",
+    "status": 200,
+    "bytes": 931,
+    "checked_at": "2026-09-09T18:37:19.195335+00:00"
+  },
+  {
+    "path": "/api/v1/forecast?scenario=8",
+    "status": 200,
+    "bytes": 163,
+    "checked_at": "2026-09-09T18:37:19.200578+00:00"
+  },
+  {
+    "path": "/api/v1/forecast?scenario=10",
+    "status": 200,
+    "bytes": 164,
+    "checked_at": "2026-09-09T18:37:19.207745+00:00"
+  },
+  {
+    "path": "/api/v1/forecast?scenario=12",
+    "status": 200,
+    "bytes": 164,
+    "checked_at": "2026-09-09T18:37:19.214243+00:00"
+  },
+  {
+    "path": "/api/v1/monthly-change",
+    "status": 200,
+    "bytes": 73,
+    "checked_at": "2026-09-09T18:37:19.218571+00:00"
+  },
+  {
+    "path": "/api/v1/data-quality",
+    "status": 200,
+    "bytes": 3493,
+    "checked_at": "2026-09-09T18:37:19.229946+00:00"
+  },
+  {
+    "path": "/api/v1/sources",
+    "status": 200,
+    "bytes": 1506,
+    "checked_at": "2026-09-09T18:37:19.233098+00:00"
+  },
+  {
+    "path": "/api/v1/filters?uf=PR",
+    "status": 200,
+    "bytes": 134,
+    "checked_at": "2026-09-09T18:37:19.241120+00:00"
+  },
+  {
+    "path": "/api/v1/export/fleet?format=csv",
+    "status": 200,
+    "bytes": 18,
+    "checked_at": "2026-09-09T18:37:19.247482+00:00"
+  },
+  {
+    "path": "/api/v1/export/fleet?format=xlsx",
+    "status": 200,
+    "bytes": 4946,
+    "checked_at": "2026-09-09T18:37:19.283684+00:00"
+  },
+  {
+    "path": "POST /api/v1/admin/etl/run (sem chave)",
+    "status": 401,
+    "expected": 401
+  }
+]

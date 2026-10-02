@@ -1,0 +1,62 @@
+# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Runtime data: source ZIPs, databases, PostgreSQL, logs and backups
+data/*
+!data/reviewed/
+!data/reviewed/*.json
+!data/.gitkeep
+backups/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.log
+*.log.*
+
+# Generated source-discovery cache
+senatran-catalog.json
+
+# Frontend dependencies and generated output
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.next/
+dashboard/.vinext/
+dashboard/.wrangler/
+dashboard/coverage/
+dashboard/outputs/
+dashboard/work/
+dashboard/*.tsbuildinfo
+
+# Airflow local state
+airflow/logs/
+airflow/airflow.db
+airflow/airflow.cfg
+airflow/webserver_config.py
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.tmp
+
+# Local planning and office documents
+*.docx
+*.xlsx
+*.xls
