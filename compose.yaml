@@ -19,6 +19,9 @@ services:
       DATABASE_URL: postgresql+psycopg://i9:${POSTGRES_PASSWORD}@postgres:5432/i9
       ADMIN_API_KEY: ${ADMIN_API_KEY:?Configure ADMIN_API_KEY in .env}
       ALLOW_SOURCE_DOWNLOAD: ${ALLOW_SOURCE_DOWNLOAD:-false}
+      I9_CATALOG_AUTO_REFRESH: "false"
+      I9_ON_DEMAND_WORKER: "true"
+      I9_CHECK_ON_START: "true"
       I9_UPDATES_PAUSED: ${I9_UPDATES_PAUSED:-true}
       I9_MAX_DOWNLOAD_BYTES: ${I9_MAX_DOWNLOAD_BYTES:-500000000}
     depends_on:
@@ -32,16 +35,17 @@ services:
     volumes: ["./data:/app/data"]
     depends_on:
       migrate: {condition: service_completed_successfully}
-    restart: unless-stopped
+    restart: "no"
 
   worker:
+    profiles: ["maintenance"]
     build: .
-    command: ["python", "-m", "src.worker"]
+    command: ["python", "-m", "src.worker", "--no-schedule"]
     environment: *app-environment
     volumes: ["./data:/app/data"]
     depends_on:
       migrate: {condition: service_completed_successfully}
-    restart: unless-stopped
+    restart: "no"
 
   metabase-db:
     image: postgres:17

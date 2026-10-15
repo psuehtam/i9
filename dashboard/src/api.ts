@@ -33,7 +33,10 @@ export function useResource<T>(path: string | null, interval = 0) {
   const [data, setData] = useState<T>(); const [error, setError] = useState(''); const [loading, setLoading] = useState(true); const [version, setVersion] = useState(0);
   const reload = useCallback(() => setVersion(n => n + 1), []);
   useEffect(() => {
+    // Clear the previous resource when its URL changes, before the async response arrives.
+    // oxlint-disable-next-line react/react-compiler
     if (!path) { setLoading(false); setData(undefined); setError(''); return; }
+    // oxlint-disable-next-line react/react-compiler
     const controller = new AbortController(); setLoading(true); setError(''); setData(undefined);
     const load = () => api<T>(path, { signal: controller.signal }).then(value => { setData(value); setError(''); }).catch((e: Error) => { if (e.name !== 'AbortError') setError(e.message); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     void load(); const timer = interval ? window.setInterval(load, interval) : undefined;
@@ -54,4 +57,5 @@ export interface Page<T> { items: T[]; total: number; limit: number; offset: num
 export interface ModelsResponse extends Page<Model> { summary?: { published: number; registered: number; identified: number; with_battery: number }; }
 export interface UnitsResponse extends Page<Vehicle> { model_group: Model; }
 export interface VehicleResponse { vehicle: Vehicle; membership?: { public_identifier: string }; model_group?: Model; registration_status: string; installations: Installation[]; publication?: Publication; }
-export interface BatteryResponse { battery: Battery; battery_model?: { manufacturer?: string; nominal_capacity_kwh?: number }; installations: Installation[]; events: Record<string, unknown>[]; }
+export interface BatteryEvent { id?: string; event_type?: string; type?: string; observed_at?: string; notes?: string; soh_percent?: number; odometer_km?: number; vehicle_id?: string; cycle_count?: number; }
+export interface BatteryResponse { battery: Battery; battery_model?: { manufacturer?: string; nominal_capacity_kwh?: number }; installations: Installation[]; events: BatteryEvent[]; }

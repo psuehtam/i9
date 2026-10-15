@@ -14,7 +14,7 @@ from src import db, pipeline, pipeline_schema as schema
 
 
 TERMINAL = {'complete', 'failed', 'paused'}
-REMOTE_KINDS = {'import_remote', 'heavy_stats_remote'}
+REMOTE_KINDS = {'import_remote', 'heavy_stats_remote', 'official_report_remote'}
 
 
 def validate_reference(value: str) -> str:
@@ -41,9 +41,10 @@ def jobs_for_reference(reference: str) -> list[dict]:
             if (item.get('payload') or {}).get('reference') != reference:
                 continue
             # Keep only the newest execution for each dataset.
-            if item['kind'] in seen:
+            identity = (item['kind'], item['payload'].get('report_id'))
+            if identity in seen:
                 continue
-            seen.add(item['kind'])
+            seen.add(identity)
             result.append(item)
         return result
 
@@ -83,31 +84,20 @@ def main() -> int:
     db.init_db()
     pipeline.initialize()
     print(f'Consultando a SENATRAN para {args.reference}...', flush=True)
-    discovery = pipeline.discover(
-        start=args.reference,
-        end=args.reference,
-        refresh=args.refresh,
-        discovery_key=f'manual:{args.reference}:{pipeline.timestamp()}',
-    )
-
-    if discovery['ambiguous_resources']:
-        print('A fonte publicou mais de um arquivo possível; a importação foi bloqueada para revisão.', file=sys.stderr)
-        return 2
-    if args.reference in discovery['missing_references']:
-        print(f'A SENATRAN ainda não disponibilizou o arquivo de marca/modelo de {args.reference}.', file=sys.stderr)
+    from src.senatran_months import refresh_catalog, request_import
+    refresh_catalog()
+    try:
+        requested = request_import(args.reference, args.refresh, f'cli:{args.reference}:{pipeline.timestamp()}')
+    except Exception as exc:
+        print(getattr(exc, 'detail', str(exc)), file=sys.stderr)
         return 3
-
-    target_ids = set(discovery['queued_jobs'])
+    target_ids = set(requested['job_ids'])
     jobs = jobs_for_reference(args.reference)
     active = [item for item in jobs if item['status'] in {'queued', 'running'}]
     target_ids.update(item['id'] for item in active)
     if not target_ids:
-        completed = [item for item in jobs if item['kind'] == 'import_remote' and item['status'] == 'complete']
-        if completed:
-            print(f'{args.reference} já estava importado; nenhum arquivo foi baixado novamente.')
-            return 0
-        print('Nenhuma execução foi criada para essa competência.', file=sys.stderr)
-        return 4
+        print(f'{args.reference} ja estava importado; nenhum arquivo foi baixado novamente.')
+        return 0
 
     last_lines: dict[str, str] = {}
     owner = f'manual-month:{os.getpid()}'

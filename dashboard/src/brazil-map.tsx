@@ -1,3 +1,5 @@
+/* SVG paths cannot be HTML buttons; roles and keyboard handlers expose the interactive map. */
+/* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import brazil from '@svg-maps/brazil';
 
 interface BrazilMapProps {

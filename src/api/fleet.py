@@ -59,6 +59,8 @@ class Removal(Body):
     evidence:str=Field(min_length=3,max_length=4000)
 
 class Event(Body):
+    odometer_km:float|None=Field(None,ge=0,allow_inf_nan=False)
+    installation_id:str|None=None
     observed_at:str
     event_type:str=Field('measurement',max_length=80)
     soh_percent:float|None=Field(None,ge=0,le=100)
@@ -137,22 +139,27 @@ def status():
 
 
 def model_query(pub):
-    # Resolve counters per candidate model. This lets PostgreSQL use the model
-    # indexes and keeps the public page responsive while a historical month is
-    # being prepared in the background.
-    rc=select(func.count()).select_from(o.registry).where(
-        o.registry.c.current_model_id==o.model.c.id,o.registry.c.visible.is_(True)).correlate(o.model).scalar_subquery()
-    ic=select(func.count()).select_from(o.registry.join(s.vehicle_asset,o.registry.c.vehicle_id==s.vehicle_asset.c.id)).where(
-        o.registry.c.current_model_id==o.model.c.id,o.registry.c.visible.is_(True),
-        s.vehicle_asset.c.identity_status.in_(['informed','verified','identified'])).correlate(o.model).scalar_subquery()
-    bc=select(func.count(func.distinct(o.current_install.c.vehicle_id))).select_from(
-        o.current_install.join(o.registry,o.registry.c.vehicle_id==o.current_install.c.vehicle_id)).where(
-        o.registry.c.current_model_id==o.model.c.id,o.registry.c.visible.is_(True)).correlate(o.model).scalar_subquery()
-    quantity=select(func.coalesce(func.sum(s.fleet_model_group.c.quantity),0)).select_from(
-        s.fleet_model_group.join(o.group_model,o.group_model.c.group_id==s.fleet_model_group.c.id)).where(
-        s.fleet_model_group.c.publication_id==(pub['id'] if pub else ''),o.group_model.c.model_id==o.model.c.id).correlate(o.model).scalar_subquery()
-    query=select(o.model,quantity.label('quantity'),rc.label('units_created'),ic.label('identified_count'),bc.label('batteries_registered')).where(
-        or_(rc>0,quantity>0),o.model.c.powertrain_type.in_(['BEV','PHEV','HEV','HEV_FLEX','MHEV','MHEV_12V','MHEV_48V','FCEV']))
+    # Aggregate each registry once instead of repeating scans for every card.
+    registered = select(o.registry.c.current_model_id.label('model_id'), func.count().label('n')).where(
+        o.registry.c.visible.is_(True)).group_by(o.registry.c.current_model_id).subquery()
+    identified = select(o.registry.c.current_model_id.label('model_id'), func.count().label('n')).select_from(
+        o.registry.join(s.vehicle_asset, o.registry.c.vehicle_id == s.vehicle_asset.c.id)).where(
+        o.registry.c.visible.is_(True), s.vehicle_asset.c.identity_status.in_(['informed', 'verified', 'identified'])
+        ).group_by(o.registry.c.current_model_id).subquery()
+    batteries = select(o.registry.c.current_model_id.label('model_id'), func.count(func.distinct(o.current_install.c.vehicle_id)).label('n')).select_from(
+        o.current_install.join(o.registry, o.registry.c.vehicle_id == o.current_install.c.vehicle_id)).where(
+        o.registry.c.visible.is_(True)).group_by(o.registry.c.current_model_id).subquery()
+    quantities = select(o.group_model.c.model_id, func.sum(s.fleet_model_group.c.quantity).label('n')).select_from(
+        s.fleet_model_group.join(o.group_model, o.group_model.c.group_id == s.fleet_model_group.c.id)).where(
+        s.fleet_model_group.c.publication_id == (pub['id'] if pub else '')).group_by(o.group_model.c.model_id).subquery()
+    rc, ic, bc = (func.coalesce(table.c.n, 0) for table in (registered, identified, batteries))
+    quantity = func.coalesce(quantities.c.n, 0)
+    query = select(o.model, quantity.label('quantity'), rc.label('units_created'), ic.label('identified_count'), bc.label('batteries_registered')).select_from(
+        o.model.outerjoin(registered, registered.c.model_id == o.model.c.id)
+        .outerjoin(identified, identified.c.model_id == o.model.c.id)
+        .outerjoin(batteries, batteries.c.model_id == o.model.c.id)
+        .outerjoin(quantities, quantities.c.model_id == o.model.c.id)).where(
+        or_(rc > 0, quantity > 0), o.model.c.powertrain_type.in_(['BEV','PHEV','HEV','HEV_FLEX','MHEV','MHEV_12V','MHEV_48V','FCEV']))
     return query,rc,ic,bc
 
 
@@ -245,7 +252,8 @@ def update_dossier(identifier:str,body:DossierUpdate,request:Request,user=Depend
 def battery(battery_id:str):
     with db.engine.connect() as c:
         b=service.get(c,s.battery_asset,battery_id);p=service.passport(c,'battery',battery_id)
-        return {'battery':b,'battery_model':service.get(c,s.battery_model,b['battery_model_id']) if b['battery_model_id'] else None,
+        from src.battery_status import summary
+        return {**summary(c,battery_id), 'battery':b,'battery_model':service.get(c,s.battery_model,b['battery_model_id']) if b['battery_model_id'] else None,
             'passport':p,'pending_fields':p['counts']['pending'],'installations':service.installations(c,battery_id=battery_id),
             'events':[dict(r) for r in c.execute(select(s.lifecycle).where(s.lifecycle.c.battery_id==battery_id).order_by(s.lifecycle.c.observed_at.desc(),s.lifecycle.c.id.desc())).mappings()]}
 
@@ -384,7 +392,11 @@ def enqueue_job(body:JobRequest,user=Depends(require_admin)):
         raise HTTPException(409,'Atualizações remotas pausadas para economizar internet. O mês local continua disponível.')
     if body.kind not in ('discover','materialize','reclassify','heavy_stats_remote','heavy_stats_file'):
         raise HTTPException(422,'Tipo de execução não permitido nesta interface')
-    try:return pipeline.enqueue(body.kind,body.payload,body.idempotency_key)
+    try:
+        result=pipeline.enqueue(body.kind,body.payload,body.idempotency_key)
+        from src.on_demand import notify
+        notify()
+        return result
     except ValueError as exc:raise HTTPException(409,str(exc))
 
 
@@ -399,7 +411,11 @@ def get_job(job_id:str,user=Depends(require_admin)):
 @router.post('/admin/jobs/{job_id}/retry',status_code=202)
 def retry_job(job_id:str,user=Depends(require_admin)):
     from src import pipeline
-    try:return pipeline.retry_job(job_id)
+    try:
+        result=pipeline.retry_job(job_id)
+        from src.on_demand import notify
+        notify()
+        return result
     except ValueError as exc:raise HTTPException(409,str(exc))
 
 
@@ -501,3 +517,89 @@ def heavy_statistics(reference:str|None=None,vehicle_type:str|None=None,uf:str|N
 def set_policy(body:Policy,request:Request,user=Depends(require_admin)):
     from src import pipeline
     return pipeline.set_alert_policy({'national_ratio':body.national_pct/100,'model_ratio':body.model_pct/100,'model_absolute':body.model_absolute},user['username'],body.reason)
+
+
+class MonthImport(Body):
+    dataset: str = Field('all', pattern='^(all|primary|complement)$')
+    reference: str = Field(pattern=r'^20\d{2}-(0[1-9]|1[0-2])$')
+    refresh: bool = False
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+@router.get('/admin/senatran/months')
+def senatran_months(user=Depends(require_admin)):
+    from src.senatran_months import months
+    return months()
+
+
+@router.post('/admin/senatran/refresh', status_code=202)
+def senatran_refresh(user=Depends(require_admin)):
+    from src.senatran_months import request_refresh
+    result = request_refresh()
+    from src.on_demand import notify
+    notify()
+    return result
+
+
+@router.post('/admin/senatran/import', status_code=202)
+def senatran_import(body: MonthImport, user=Depends(require_admin)):
+    from src.senatran_months import request_import
+    result = request_import(body.reference, body.refresh, user['id'] + ':' + body.idempotency_key, dataset=body.dataset)
+    from src.on_demand import notify
+    notify()
+    return result
+
+
+class WarrantyUpdate(Body):
+    revision: int = Field(ge=0)
+    start_date: date | None = None
+    end_date: date | None = None
+    duration_months: int | None = Field(None, ge=0, le=600)
+    km_limit: float | None = Field(None, ge=0, allow_inf_nan=False)
+    km_basis: str | None = Field(None, pattern='^(absolute|since_start)$')
+    baseline_km: float | None = Field(None, ge=0, allow_inf_nan=False)
+    installation_id: str | None = None
+    conditions: str | None = Field(None, max_length=10000)
+    evidence: str = Field(min_length=3, max_length=4000)
+
+
+@router.get('/batteries/{battery_id}/warranty')
+def warranty_detail(battery_id: str):
+    from src.battery_status import summary
+    with db.engine.connect() as c:
+        return summary(c, battery_id)
+
+
+@router.put('/batteries/{battery_id}/warranty')
+def warranty_update(battery_id: str, body: WarrantyUpdate, request: Request, user=Depends(require_admin)):
+    from src.battery_status import save
+    payload = body.model_dump(mode='json')
+    return transaction(request, payload, user, lambda c: save(c, battery_id, payload, user))
+
+
+@router.get('/admin/battery-alerts')
+def battery_alerts(user=Depends(require_admin), limit:int=Query(50,ge=1,le=200), offset:int=Query(0,ge=0)):
+    from src.battery_status import summary
+    items = []
+    with db.engine.connect() as c:
+        for battery in c.execute(select(s.battery_asset).order_by(s.battery_asset.c.id)).mappings():
+            status = summary(c, battery['id'])
+            reasons = []
+            if status['warranty']['term_status'] in ('expired', 'expiring'): reasons.append(status['warranty']['term_status'])
+            if status['warranty']['km_status'] == 'limit_reached': reasons.append('km_limit')
+            if status['health']['soh_limit_reached']: reasons.append('soh_limit')
+            if status['health']['cycle_limit_reached']: reasons.append('cycle_limit')
+            if reasons: items.append({'battery_id':battery['id'],'identifier':battery['battery_identifier'] or battery['manufacturer_serial_number'] or battery['id'],'reasons':reasons,**status})
+    return {'items':items[offset:offset+limit],'total':len(items),'limit':limit,'offset':offset}
+
+
+@router.get('/senatran/reports')
+def official_reports(reference: str | None = None):
+    from src.senatran_reports import reports
+    return reports(reference)
+
+
+@router.get('/senatran/reports/{source_id}/rows')
+def official_report_rows(source_id: str, offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100), scope: str = Query('all', pattern='^(all|electrified|electric)$')):
+    from src.senatran_reports import report_rows
+    return report_rows(source_id, offset, limit, scope)

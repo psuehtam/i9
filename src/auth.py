@@ -35,9 +35,13 @@ def normalize_username(value):
     return value
 
 
-def hash_password(password):
+def validate_password(password):
     if len(password) < 12 or len(password.encode('utf-8')) > 1024:
         raise ValueError('A senha precisa ter pelo menos 12 caracteres e no máximo 1024 bytes.')
+
+
+def hash_password(password):
+    validate_password(password)
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, PASSWORD_ITERATIONS)
     return f'pbkdf2_sha256${PASSWORD_ITERATIONS}${salt.hex()}${digest.hex()}'

@@ -234,6 +234,8 @@ def add_event(c,battery_id,payload,user):
     for k in ('soh_percent','soc_percent'):
         if k in values and not 0<=values[k]<=100:raise HTTPException(422,'Percentual deve estar entre 0 e 100')
     if 'cycle_count' in values and (values['cycle_count']<0 or int(values['cycle_count'])!=values['cycle_count']):raise HTTPException(422,'Ciclos devem ser inteiros não negativos')
+    from src.battery_status import validate_odometer
+    values.update(validate_odometer(c, battery_id, payload, observed))
     event=dict(id=intelligence.uid(),battery_id=battery_id,source_snapshot_id=source,observed_at=observed,event_type=payload.get('event_type') or 'measurement',notes=payload.get('notes'),**values)
     c.execute(insert(s.lifecycle).values(**event))
     changes={}

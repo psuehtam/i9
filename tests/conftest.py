@@ -10,6 +10,7 @@ from src.transform import ingest
 @pytest.fixture
 def database(monkeypatch):
     monkeypatch.setenv('I9_SCHEDULER_ENABLED','false')
+    monkeypatch.setenv('I9_ON_DEMAND_WORKER','false')
     monkeypatch.setenv('I9_UPDATES_PAUSED','false')
     engine=create_engine('sqlite://',connect_args={'check_same_thread':False},poolclass=StaticPool)
     db.meta.create_all(engine)

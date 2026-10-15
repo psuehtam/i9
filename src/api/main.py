@@ -28,10 +28,17 @@ async def lifespan(app):
     import anyio.to_thread
     anyio.to_thread.current_default_thread_limiter().total_tokens=8
     init_db();fail_orphan_runs();seed_catalog()
-    # Scheduling belongs to the durable worker, never to an API process.
-    yield
+    from src import on_demand
+    requested_work = os.getenv('I9_ON_DEMAND_WORKER', 'false').lower() == 'true'
+    if requested_work:
+        on_demand.start(check_catalog=os.getenv('I9_CHECK_ON_START', 'true').lower() == 'true')
+    try:
+        yield
+    finally:
+        if requested_work:
+            on_demand.stop()
 
-app = FastAPI(title='i9+ • Inteligência de baterias e veículos', version='2.0.0',lifespan=lifespan)
+app = FastAPI(title='NEXUS • Inteligência de baterias e veículos', version='2.0.0',lifespan=lifespan)
 app.add_middleware(CORSMiddleware,allow_origins=os.getenv('CORS_ORIGINS','http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000').split(','),allow_credentials=True,allow_methods=['GET','POST','PUT'],allow_headers=['Content-Type','X-Admin-Key','X-API-Key','X-CSRF-Token','Idempotency-Key'])
 
 @app.middleware('http')
@@ -308,7 +315,7 @@ def export(report:Literal['fleet','forecast','monthly-change','data-quality','ba
         for r in data:ws.append([r.get(k) for k in headers])
         ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions
         output=io.BytesIO();wb.save(output);body=output.getvalue();media='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    return Response(body,media_type=media,headers={'Content-Disposition':f'attachment; filename="i9-{report}-{resolve(f) or "sem-dados"}.{format}"'})
+    return Response(body,media_type=media,headers={'Content-Disposition':f'attachment; filename="nexus-{report}-{resolve(f) or "sem-dados"}.{format}"'})
 
 class RunRequest(BaseModel):
     reference:str|None=Field(None,pattern=r'^20\d{2}-(0[1-9]|1[0-2])$')

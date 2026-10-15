@@ -1,59 +1,59 @@
-# i9+ — Veículos e baterias
+# NEXUS — Veículos e baterias
 
-O i9 organiza os dados mensais da SENATRAN no fluxo **Veículos → modelo → cadastro individual → ficha da bateria**. Relatórios e Administração usam a mesma estrutura visual.
+O NEXUS organiza os dados mensais da SENATRAN no fluxo **Veículos → modelo → cadastro individual → ficha da bateria**. Relatórios e Administração usam a mesma estrutura visual.
 
-## Instalação recomendada
+## Instalação recomendada no Windows
 
-Para uma instalação nova, use Docker Desktop. Ele inicia PostgreSQL 17, aplica as migrações, compila o frontend e mantém a API e o trabalhador em processos separados.
+1. Baixe e extraia o projeto (ou clone o repositório).
+2. Abra **instalar.bat** na raiz ou na pasta **atalhos**. Ele verifica os requisitos, instala Docker pelo WinGet quando possível, gera configurações, prepara PostgreSQL e a aplicação e solicita a criação do administrador.
+3. Nos próximos usos, abra **iniciar.bat**. Se Docker ou `.env` estiverem ausentes, esse atalho entra automaticamente no modo de primeira instalação. O navegador abre em http://localhost:8000/veiculos após a aplicação ficar pronta.
+4. Pressione **Enter na janela de inicialização** ou use **desligar.bat** para parar os serviços do projeto, preservando os dados.
 
-Requisitos:
+São necessários Windows compatível com Docker Desktop, virtualização habilitada, WSL 2, internet na instalação e pelo menos 15 GB livres inicialmente. O instalador orienta sobre permissões e reinicialização; não reinicia o computador. Depois de resolver um requisito, execute-o novamente. Dependendo do volume de dados, será necessário mais espaço.
 
-- Git;
-- Docker Desktop com Docker Compose;
-- pelo menos 15 GB livres para baixar e processar uma competência mensal com margem;
-- conexão estável durante o download inicial.
+O instalador preserva configurações e contas existentes. Valores de exemplo são identificados. Logs operacionais ficam em `data/logs/windows.log`; senhas não são registradas. A inicialização diária reutiliza as imagens prontas. Se alguma imagem estiver ausente após uma instalação incompleta, iniciar.bat prepara as dependências automaticamente e solicita a criação do administrador caso necessário. Para preparar uma versão nova do código, faça backup e execute instalar.bat novamente.
 
-No PowerShell:
+### Dados da Senatran pelo dashboard
 
-```powershell
-git clone URL_DO_REPOSITORIO
-cd i9
-Copy-Item .env.example .env
-```
+Entre em **Administração → Atualizações → Dados da Senatran**. O catálogo é consultado uma vez ao iniciar o programa. Use **Verificar atualizações** para consultar novamente (cliques próximos são agrupados). Não há verificação por hora ou diária.
 
-Abra o `.env` e troque `POSTGRES_PASSWORD` e `ADMIN_API_KEY` por valores longos e diferentes. Use letras e números na senha do PostgreSQL. Para permitir o download manual, configure:
+O NEXUS consulta o catálogo de arquivos e a página oficial de publicações no gov.br. Se o catálogo de marca/modelo estiver indisponível, os meses publicados continuam visíveis pela página oficial, com um link para conferir a fonte. Publicação e disponibilidade do arquivo são indicadas separadamente; o sistema não tenta importar uma página HTML como relatório. Se ambas as fontes falharem, a última lista válida é preservada. Consultas não são repetidas em segundo plano; tente novamente pelo botão depois de pelo menos um minuto. Não é necessário reinstalar.
+
+Escolha o ano e clique em **Baixar e importar mês** no mês desejado. O NEXUS encontra os links oficiais, baixa e importa sequencialmente os relatórios disponíveis, sem solicitar arquivos ao usuário. Marca/modelo, tipo/espécie/eixos e as demais planilhas têm progresso e falhas separados. A indisponibilidade de marca/modelo não bloqueia os outros arquivos, mas os modelos e suas quantidades dependem dessa base. Instalar uma planilha complementar não significa concluir toda a competência.
+
+Em **Veículos**, escolha o mês no campo **Referência SENATRAN** para consultar os modelos eletrificados reconhecidos. Em **Relatórios**, explore as quantidades por modelo, estado e município. Os arquivos complementares são preservados para rastreabilidade; a interface não apresenta a antiga tabela de planilhas brutas. **Retomar** aproveita os checkpoints existentes. **Verificar revisão** consulta novamente o conteúdo de um mês instalado; só é indicada uma revisão disponível quando os metadados da fonte demonstram mudança.
+
+Os controles são independentes:
 
 ```dotenv
+I9_CATALOG_AUTO_REFRESH=false
+I9_ON_DEMAND_WORKER=true
+I9_CHECK_ON_START=true
 ALLOW_SOURCE_DOWNLOAD=true
 I9_UPDATES_PAUSED=true
 ```
 
-`I9_UPDATES_PAUSED=true` impede verificações automáticas; o comando manual abaixo continua funcionando e baixa somente o mês pedido.
+A instalação padrão usa processamento sob demanda dentro da API: a tarefa termina quando não há mais trabalho, sem outro processo Python permanentemente ocioso. Python e PostgreSQL ficam no Docker; não é necessário instalar Python no Windows. O Compose desativa reinício automático dos serviços e mantém o trabalhador separado apenas no perfil opcional `maintenance`. Os antigos agendamentos deste projeto no Windows são desativados pelo iniciador. Credenciais e dados existentes são preservados.
 
-Inicie o sistema e crie a primeira conta administrativa:
+A consulta do catálogo nunca baixa relatórios. Enquanto você usa o sistema, a API e o banco precisam continuar ativos. Fechar apenas a aba não encerra o sistema; use Enter na janela de inicialização ou desligar.bat. O Docker Desktop pode continuar aberto para outras aplicações.
 
-```powershell
-docker compose up --build -d
-docker compose exec api python -m scripts.setup_admin --username admin
-```
-
-A aplicação estará em http://localhost:8000/veiculos e a documentação da API em http://localhost:8000/docs.
-
-### Baixar somente um mês
-
-Use uma competência encerrada no formato `AAAA-MM`:
+A alternativa por terminal usa o mesmo serviço do painel:
 
 ```powershell
-docker compose exec worker python -m scripts.download_month --reference 2026-08
+docker compose exec api python -m scripts.download_month --reference 2026-08
 ```
 
-O comando consulta o catálogo oficial, baixa somente os conjuntos encontrados para essa competência, mostra o progresso e processa o conteúdo. O arquivo principal de marca/modelo costuma ter centenas de megabytes compactado e dezenas de milhões de linhas; o processamento usa disco adicional temporariamente. Uma interrupção pode ser retomada sem duplicar os blocos confirmados.
+Acrescente `--refresh` para verificar uma revisão. O clone não inclui frota, banco ou credenciais. Cada mês pode ocupar vários GB; importações preservam os originais, histórico e a publicação anterior em caso de falha. Importar um mês antigo não altera a publicação padrão mais recente.
 
-Se a competência ainda não foi publicada, o comando termina informando a ausência. Se ela já estiver concluída, não baixa o arquivo novamente. Para verificar uma revisão posterior do mesmo mês, acrescente `--refresh`.
+### Garantia e saúde das baterias
 
-O clone do GitHub não contém dados da frota. ZIPs originais, banco, arquivos temporários e credenciais são criados localmente e estão excluídos pelo `.gitignore`.
+Na ficha de uma bateria física, use **Editar garantia** para informar datas, duração em meses, limite/base de quilometragem, instalação, condições e evidência. Referências do modelo são sugestões para conferência; não são aplicadas automaticamente. Os 71 campos do passaporte permanecem independentes.
 
-## Instalação local no Windows
+Em **Registrar evento**, cadastre saúde, ciclos e, quando disponível, hodômetro vinculado à instalação. Leituras de veículos diferentes não são comparadas como um único contador. Após uma troca de veículo, a garantia precisa ter sua aplicação conferida antes de avaliar a quilometragem da nova instalação.
+
+Administração mostra prazos que terminam em até 90 dias, prazos encerrados e limites técnicos atingidos. Os cálculos exibem a data da medição e os dados ausentes. Encerramento de garantia não muda o estado operacional da bateria e não prevê sua data de substituição.
+
+## Desenvolvimento sem Docker no Windows
 
 Para desenvolvimento, com Python 3.14 e Node.js 22 instalados:
 
@@ -78,7 +78,13 @@ Para baixar uma competência nessa instalação, habilite `ALLOW_SOURCE_DOWNLOAD
 
 ## Administrador
 
-Leituras são públicas. Alterações exigem sessão administrativa e proteção CSRF. Não existe senha padrão.
+Leituras são públicas. Alterações exigem sessão administrativa e proteção CSRF. Não existe senha padrão; a senha deve ter pelo menos 12 caracteres. Na instalação recomendada, o instalador solicita a criação da conta. Para redefini-la com o sistema iniciado:
+
+```powershell
+docker compose exec api python -m scripts.setup_admin --username admin --reset
+```
+
+Substitua `admin` pelo usuário escolhido na instalação.
 
 Para criar a conta em uma instalação local e escolher a senha quando solicitado:
 
@@ -107,7 +113,7 @@ O importador lê o original em blocos de até 100 mil linhas, filtra as família
 
 A cobertura é parcial e explícita: nomes que não permitem distinguir combustão de híbrido não são classificados por suposição. Categoria desconhecida não vira automaticamente automóvel.
 
-O trabalhador é separado da API. Fila, tentativas, checkpoints e reservas ficam no PostgreSQL. A nova publicação só entra no ar depois de terminar a preparação e validar as contagens. Downloads remotos habilitados usam trechos verificáveis e retomáveis.
+Na instalação padrão, o processamento é iniciado sob demanda dentro da API. O trabalhador separado é uma opção de manutenção. Fila, tentativas, checkpoints e reservas ficam no PostgreSQL. A nova publicação só entra no ar depois de terminar a preparação e validar as contagens. Downloads remotos habilitados usam trechos verificáveis e retomáveis.
 
 Para processar um arquivo já disponível, sem internet:
 
@@ -119,7 +125,7 @@ A retomada preserva os blocos confirmados. Administração mostra execução, er
 
 ## Atualização automática e backups
 
-Para ativar a consulta diária das competências fechadas, configure `I9_UPDATES_PAUSED=false`. O sistema consulta a fonte oficial, mas não baixa novamente uma competência concluída. No Windows, `scripts/install-tasks.ps1` configura início após login e backup diário às 03h. Fechar o navegador não interrompe o trabalhador; desligar o computador adia o processamento.
+A instalação padrão não utiliza agendamentos nem inicia junto com o Windows. A consulta ocorre ao iniciar o programa ou pelo botão Verificar atualizações. O script legado `scripts/install-tasks.ps1` é exclusivo para operação administrada e não faz parte desta instalação. Os comandos de manutenção abaixo exigem o ambiente Python de desenvolvimento, `DATABASE_URL` apontando para o PostgreSQL a copiar e ferramentas PostgreSQL 17 (`pg_dump`, `pg_restore`, `createdb` e `dropdb`) no PATH ou em `I9_PG_BIN`. Não são executados automaticamente pelos atalhos:
 
 ```powershell
 .venv/Scripts/python.exe -m scripts.operations backup
@@ -134,8 +140,19 @@ O backend usa Python, FastAPI, SQLAlchemy, Alembic e PostgreSQL 17. O frontend u
 
 ```powershell
 .venv/Scripts/python.exe -m pytest -q
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test_windows.ps1
 Set-Location dashboard
+npm.cmd ci
+npm.cmd run lint
 npm.cmd run build
 ```
 
 Testes de concorrência exigem `I9_TEST_DATABASE_URL` e usam esquemas descartáveis isolados. Não execute ferramentas que apaguem a base operacional. A documentação histórica anterior está em `docs/README-anterior-v3.md`.
+
+## Repositório e atualização
+
+Versione o código, as migrações, os atalhos, `.env.example` e os arquivos de dependências (incluindo `dashboard/package-lock.json`). `.env`, senhas, volumes, arquivos baixados, logs, backups, `node_modules` e `dist` ficam fora do Git. Um clone novo começa sem os dados mensais: instale o sistema e escolha os meses em Administração.
+
+O nome público é NEXUS. Os identificadores técnicos `I9_*` e o banco `i9` continuam por compatibilidade. Em uma instalação existente, preserve a pasta do projeto e o nome do projeto Compose para reutilizar o volume correto. Não use `docker compose down -v` para atualizar: esse comando remove os volumes.
+
+Antes de atualizar uma instalação com dados, faça e confira um backup. Atualize o código e execute `instalar.bat` para reconstruir as imagens e aplicar as migrações; depois use `iniciar.bat`. Os testes automatizados do instalador simulam requisitos e preservação de configurações; não substituem a validação em um Windows limpo, especialmente WSL, virtualização, permissões e reinicialização.

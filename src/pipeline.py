@@ -5,6 +5,7 @@ lease generation protect every committed block. SQLite is supported for unit
 tests; deployment and multi-worker execution use PostgreSQL.
 """
 from __future__ import annotations
+from contextlib import nullcontext
 
 import csv
 import hashlib
@@ -43,7 +44,7 @@ TRANSFORMATION_VERSION = 'model-observation-1'
 BLOCK_SIZE = 1000
 LEASE_SECONDS = 120
 RETRY_MINUTES = (5, 30, 120)
-KINDS = {'discover', 'import_file', 'import_remote', 'heavy_stats_file', 'heavy_stats_remote', 'reclassify', 'materialize'}
+KINDS = {'catalog_refresh', 'discover', 'import_file', 'import_remote', 'heavy_stats_file', 'heavy_stats_remote', 'official_report_remote', 'reclassify', 'materialize'}
 DEFAULT_POLICY = {'national_ratio': .20, 'model_ratio': .50, 'model_absolute': 100}
 
 
@@ -104,16 +105,16 @@ def desired_generation(c, reference):
     return c.execute(select(p.intent.c.generation).where(p.intent.c.reference == reference)).scalar_one_or_none()
 
 
-def enqueue(kind, payload, idempotency_key):
+def enqueue(kind, payload, idempotency_key, connection=None):
     if kind not in KINDS or not isinstance(payload, dict) or not idempotency_key:
         raise ValueError('Tipo, payload ou chave de idempotência inválido')
     reference = payload.get('reference')
-    if kind in {'import_file', 'import_remote', 'heavy_stats_file', 'heavy_stats_remote', 'reclassify'}:
+    if kind in {'import_file', 'import_remote', 'heavy_stats_file', 'heavy_stats_remote', 'official_report_remote', 'reclassify'}:
         validate_reference(reference)
     request_hash = digest({'kind': kind, 'payload': payload})
     jid = stable('job:' + idempotency_key)
     stamp = timestamp()
-    with db.engine.begin() as c:
+    with (nullcontext(connection) if connection is not None else db.engine.begin()) as c:
         result = _upsert_nothing(c, p.job, dict(id=jid, kind=kind, payload=payload,
             idempotency_key=idempotency_key, request_hash=request_hash, status='queued', stage='queued',
             created_at=stamp, updated_at=stamp, available_at=stamp, token=0, attempt_count=0,
@@ -155,6 +156,12 @@ def list_jobs(limit=50):
 
 
 def retry_job(job_id):
+    job = get_job(job_id)
+    if job['kind'] == 'catalog_refresh':
+        if job['status'] not in ('failed', 'paused'):
+            raise Conflict('Somente execuções falhas ou pausadas podem ser retomadas')
+        from src.senatran_months import request_refresh
+        return request_refresh()
     with db.engine.begin() as c:
         row = c.execute(select(p.job).where(p.job.c.id == job_id).with_for_update()).mappings().first()
         if not row:
@@ -180,6 +187,16 @@ def claim(owner=None, at=None, job_id=None):
         eligible = or_(and_(p.job.c.status == 'queued', p.job.c.available_at <= stamp),
                        and_(p.job.c.status == 'running', or_(p.job.c.lease_until <= stamp,
                             p.job.c.epoch != operational_epoch)))
+        # Serialize heavy remote imports across CLI and worker processes.
+        from src import operational_schema as operational
+        from src.fleet_publication import insert_once
+        insert_once(c, operational.setting, dict(key='remote_import_claim', value={}, updated_at=stamp), ['key'])
+        c.execute(select(operational.setting.c.key).where(operational.setting.c.key == 'remote_import_claim').with_for_update()).first()
+        remote_kinds = ('import_remote', 'heavy_stats_remote', 'official_report_remote')
+        running_remote = c.execute(select(p.job.c.id).where(p.job.c.kind.in_(remote_kinds), p.job.c.status == 'running',
+            p.job.c.lease_until > stamp, p.job.c.epoch == operational_epoch).limit(1)).scalar()
+        if running_remote:
+            eligible = and_(eligible, p.job.c.kind.not_in(remote_kinds))
         where = and_(eligible, p.job.c.id == job_id) if job_id else eligible
         row = c.execute(select(p.job).where(where).order_by(p.job.c.available_at, p.job.c.created_at, p.job.c.id)
                         .limit(1).with_for_update(skip_locked=True)).mappings().first()
@@ -250,11 +267,16 @@ def fail(lease, error):
             isinstance(error, httpx.HTTPStatusError) and (error.response.status_code >= 500 or error.response.status_code == 429))
         attempt_number = row['attempt_count']
         delay = RETRY_MINUTES[attempt_number - 1] if retry and attempt_number <= len(RETRY_MINUTES) else None
+        message = str(error)[:2000]
+        if row['kind'] == 'catalog_refresh':
+            from src.senatran_months import catalog_error_message
+            delay = None  # Catalog checks are retried explicitly, not on a timer.
+            message = catalog_error_message(error)[:2000]
         c.execute(update(p.job).where(p.job.c.id == lease['job_id']).values(status='queued' if delay else 'failed',
             available_at=timestamp(datetime.now(timezone.utc) + timedelta(minutes=delay or 0)),
-            owner=None, lease_until=None, error=str(error)[:2000], updated_at=timestamp()))
+            owner=None, lease_until=None, error=message, stage='failed' if row['kind'] == 'catalog_refresh' else row['stage'], updated_at=timestamp()))
         c.execute(update(p.attempt).where(p.attempt.c.job_id == lease['job_id'], p.attempt.c.token == lease['token'])
-                  .values(status='failed', error=str(error)[:2000], finished_at=timestamp()))
+                  .values(status='failed', error=message, finished_at=timestamp()))
 
 
 def reset_epoch():
@@ -846,12 +868,40 @@ class _HeavyLinkParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.links = []
+        self.publications = []
+        self.reports = []
+        self.paragraph = None
+        self.anchor = None
+        self.reference = None
 
     def handle_starttag(self, tag, attrs):
+        if tag.lower() == 'p':
+            self.paragraph = ''
         if tag.lower() == 'a':
             href = dict(attrs).get('href') or ''
+            self.anchor = [href, '']
             if 'TIPO_ESPECIE_EIXOS' in href.upper():
                 self.links.append(href)
+
+    def handle_data(self, data):
+        if self.paragraph is not None:
+            self.paragraph += data
+        if self.anchor is not None:
+            self.anchor[1] += data
+
+    def handle_endtag(self, tag):
+        if tag.lower() == 'a' and self.anchor is not None:
+            href, title = self.anchor
+            if href.lower().endswith('.xlsx') and 'TIPO_ESPECIE_EIXOS' not in href.upper():
+                self.reports.append((href, title.strip()))
+            if self.reference and all(word in normalize(title) for word in ('MARCA', 'MODELO')):
+                self.publications.append((self.reference, href))
+            self.anchor = None
+        if tag.lower() == 'p' and self.paragraph is not None:
+            title = normalize(self.paragraph)
+            if title.startswith('FROTA NACIONAL'):
+                self.reference = _resource_reference({'name': title.replace(' DE ', ' ')})
+            self.paragraph = None
 
 
 def _official_heavy_resources(client, start, end):
@@ -867,6 +917,47 @@ def _official_heavy_resources(client, start, end):
             url = urljoin(page, href)
             resources.append({'id': digest(url), 'name': '08 TIPO ESPECIE EIXOS',
                               'description': 'Arquivo estatístico oficial 08', 'url': url})
+        for reference, href in sorted(set(parser.publications)):
+            resources.append({'id': digest(page + reference), 'name': '07 MARCA MODELO',
+                'description': reference, 'url': urljoin(page, href), 'published_only': True, 'publication_url': page})
+        from urllib.parse import urlparse
+        for href, title in sorted(set(parser.reports)):
+            url = urljoin(page, href)
+            if urlparse(url).scheme == 'https' and urlparse(url).hostname == 'www.gov.br':
+                resources.append({'id': digest(url), 'name': title, 'url': url,
+                                  'report_only': True, 'publication_url': page})
+    return resources
+
+
+class CatalogResources(list):
+    warning = None
+
+
+def catalog_resources(start, end):
+    from src.connectors.public import CATALOG
+    with httpx.Client(timeout=60, follow_redirects=True) as client:
+        resources = CatalogResources()
+        catalog_error = None
+        try:
+            response = client.get(CATALOG)
+            response.raise_for_status()
+            body = response.json()
+            if not body.get('success') or not isinstance(body.get('result', {}).get('resources'), list):
+                raise PermanentError('Catalogo SENATRAN fora do contrato esperado')
+            resources.extend(body['result']['resources'])
+        except (httpx.HTTPError, ValueError, PermanentError) as exc:
+            catalog_error = exc
+        try:
+            official = _official_heavy_resources(client, start, end)
+            resources.extend(official)
+        except (httpx.HTTPError, ValueError):
+            if not resources:
+                raise
+            resources.warning = 'A página de publicações está indisponível; a lista foi obtida pelo catálogo de arquivos.'
+        if catalog_error:
+            if not resources:
+                raise catalog_error
+            resources.warning = 'Meses consultados na página oficial gov.br. O catálogo de arquivos de marca/modelo está indisponível; esse relatório ficará pendente, mas os demais podem ser baixados e importados.'
     return resources
 
 
@@ -876,17 +967,11 @@ def discover(resources=None, start='2026-01', end=None, refresh=False, discovery
     end = end or datetime.now(ZoneInfo('America/Sao_Paulo')).strftime('%Y-%m')
     validate_reference(end)
     if resources is None:
-        from src.connectors.public import CATALOG
-        with httpx.Client(timeout=60, follow_redirects=True) as client:
-            response = client.get(CATALOG)
-            response.raise_for_status()
-            body = response.json()
-            official_heavy = _official_heavy_resources(client, start, end)
-        if not body.get('success') or not isinstance(body.get('result', {}).get('resources'), list):
-            raise PermanentError('Catálogo SENATRAN fora do contrato esperado')
-        resources = body['result']['resources'] + official_heavy
+        resources = catalog_resources(start, end)
     candidates,heavy_candidates = {},{}
     for resource in resources:
+        if resource.get('published_only') or resource.get('report_only'):
+            continue
         reference = _resource_reference(resource)
         label = normalize(' '.join(str(resource.get(k) or '') for k in ('name', 'description', 'url')))
         if not reference or reference < start or reference > end:
@@ -950,8 +1035,12 @@ def backfill(start='2026-01', end=None, idempotency_key=None):
 
 
 def schedule_due(at=None):
+    catalog_job = None
+    if os.getenv('I9_CATALOG_AUTO_REFRESH', 'true').lower() == 'true':
+        day = (at or datetime.now(timezone.utc)).astimezone(ZoneInfo('America/Sao_Paulo')).date().isoformat()
+        catalog_job = enqueue('catalog_refresh', {}, 'catalog-daily:' + day)['id']
     if os.getenv('I9_UPDATES_PAUSED','false').lower()=='true':
-        return {'paused':True,'reason':'Atualizações remotas pausadas para economizar internet.'}
+        return {'paused':True,'catalog_job':catalog_job,'reason':'Downloads automaticos pausados; consulta do catalogo independente.'}
     current = (at or datetime.now(timezone.utc)).astimezone(ZoneInfo('America/Sao_Paulo'))
     due = current if current.hour >= 2 else current - timedelta(days=1)
     day = due.date().isoformat()
@@ -985,7 +1074,7 @@ def record_worker_health(state='idle', job_id=None):
             from sqlalchemy.dialects.sqlite import insert as dialect_insert
         for key, value in [('worker', {'state': state, 'pid': os.getpid(), 'hostname': socket.gethostname(),
                                       'status': state, 'last_seen_at': timestamp(), 'job_id': job_id, 'checked_at': timestamp()}),
-                           ('next_check', {'scheduled_at': None if os.getenv('I9_UPDATES_PAUSED','false').lower()=='true' else timestamp(next_check), 'timezone': 'America/Sao_Paulo'})]:
+                           ('next_check', {'scheduled_at': None if os.getenv('I9_CATALOG_AUTO_REFRESH','true').lower()!='true' and os.getenv('I9_UPDATES_PAUSED','false').lower()=='true' else timestamp(next_check), 'timezone': 'America/Sao_Paulo'})]:
             c.execute(dialect_insert(operational.setting).values(key=key, value=value, updated_at=timestamp())
                       .on_conflict_do_update(index_elements=['key'], set_={'value': value, 'updated_at': timestamp()}))
 
@@ -1008,7 +1097,7 @@ def _download(job, lease):
     # a single bounded response prevents mixing bytes from different versions.
     # Large fleet archives keep the smaller resumable chunks and still require
     # a remote validator between parts.
-    chunk_size=(16 if job['kind']=='heavy_stats_remote' else 8)*1024*1024
+    chunk_size = maximum if job['kind'] == 'official_report_remote' else (16 if job['kind'] == 'heavy_stats_remote' else 8) * 1024 * 1024
     total=None;validator=None;offset=0;index=0;hasher=hashlib.sha256()
     try:
         with httpx.Client(timeout=90,follow_redirects=False) as client,assembled.open('wb') as target:
@@ -1079,7 +1168,15 @@ def _download(job, lease):
 def _execute(lease):
     job = get_job(lease['job_id'])
     payload = job['payload']
+    if job['kind'] == 'catalog_refresh':
+        from src.senatran_months import refresh_catalog
+        return refresh_catalog()
     if job['kind'] == 'discover':
+        # Older installations may still have scheduled discovery jobs queued.
+        # In desktop mode those jobs must only refresh the catalog.
+        if os.getenv('I9_ON_DEMAND_WORKER', 'false').lower() == 'true':
+            from src.senatran_months import refresh_catalog
+            return refresh_catalog()
         return discover(start=payload.get('start') or '2026-01', end=payload.get('end'),
                         refresh=bool(payload.get('refresh')), discovery_key=payload.get('discovery_key'))
     if job['kind'] == 'materialize':
@@ -1088,6 +1185,9 @@ def _execute(lease):
         path=_download(job,lease) if job['kind']=='heavy_stats_remote' else Path(payload['path'])
         from src.heavy_statistics import import_type_species_axles
         return import_type_species_axles(path,payload['reference'],lease,payload.get('url'))
+    if job['kind'] == 'official_report_remote':
+        from src.senatran_reports import import_report
+        return import_report(_download(job, lease), payload, lease)
     if job['kind'] == 'reclassify':
         content_id = payload['content_id']
         with db.engine.connect() as c:
@@ -1159,6 +1259,7 @@ def run_once(owner=None, job_id=None):
     renewer = threading.Thread(target=renew, daemon=True, name='i9-pipeline-heartbeat')
     renewer.start()
     try:
+        record_worker_health('running', lease['job_id'])
         result = _execute(lease)
         if lost:
             raise LeaseLost(str(lost[0]))

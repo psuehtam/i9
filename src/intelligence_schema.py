@@ -30,6 +30,14 @@ Index('idx_lifecycle_battery',lifecycle.c.battery_id,lifecycle.c.observed_at)
 
 TABLES={'vehicle-specs':vehicle_spec,'battery-models':battery_model,'evidence':compatibility,'vehicles':vehicle_asset,'battery-assets':battery_asset,'installations':installation,'lifecycle':lifecycle}
 
+# Odometers belong to an installation/vehicle, not to the lifetime of a pack.
+lifecycle.append_column(fk('installation_id', 'vehicle_battery_installation'))
+lifecycle.append_column(fk('vehicle_id', 'vehicle_asset'))
+warranty = Table('battery_warranty', meta,
+    Column('battery_id', ForeignKey('battery_asset.id'), primary_key=True),
+    Column('revision', Integer, nullable=False), Column('data', JSON, nullable=False),
+    Column('updated_at', String, nullable=False))
+
 passport = table("battery_passport_record", [fk("battery_id", "battery_asset", False), Column("values", JSON, nullable=False), Column("updated_at", String)], UniqueConstraint("battery_id"))
 
 # Operational fleet publications are staged separately from the immutable source

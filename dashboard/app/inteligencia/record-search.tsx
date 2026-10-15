@@ -1,9 +1,0 @@
-'use client';
-import {useState} from 'react';
-import {Button} from '@/components/ui/button';
-import {type Row} from '../lib/format';
-export default function RecordSearch({api,onOpen}:{api:(path:string,body?:unknown)=>Promise<Row>;onOpen:(record:Row,kind:string)=>Promise<void>}){
- const [term,setTerm]=useState(''),[result,setResult]=useState<Row|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
- async function search(e:React.SubmitEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError('');setResult(null);try{setResult(await api('/records/search',{term:term.trim()}))}catch(e){setError(e instanceof Error?e.message:'Não foi possível buscar.')}finally{setBusy(false)}}
- return <section className="record-search"><form className="intel-inline" onSubmit={search}><label className="filter"><span>Buscar veículo ou bateria</span><input required maxLength={100} value={term} onChange={e=>setTerm(e.target.value)} placeholder="Placa, modelo, chassi, serial ou código"/></label><Button disabled={busy||!term.trim()} type="submit">{busy?'Buscando…':'Buscar'}</Button></form>{error&&<p role="alert">{error}</p>}{result&&<div className="search-results"><p>{result.total} registros encontrados{result.total>result.items.length?' · refine a busca para ver outros resultados':''}.</p>{result.items.map((item:Row)=><article key={item.kind+item.record.id}><div><small>{item.kind==='vehicles'?'Veículo':'Bateria'}</small><strong>{item.kind==='vehicles'?[item.record.manufacturer,item.record.model,item.record.plate].filter(Boolean).join(' · ')||'Veículo sem identificação':item.record.battery_identifier||item.record.manufacturer_serial_number||item.record.passport_identifier||'Código pendente'}</strong>{item.pending.length>0&&<p>{item.pending.map((p:Row)=>p.label).join(' · ')}</p>}</div><Button variant="outline" onClick={()=>onOpen(item.record,item.kind)}>Abrir {item.kind==='vehicles'?'veículo':'bateria'}</Button></article>)}</div>}</section>
-}
