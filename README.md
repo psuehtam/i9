@@ -11,7 +11,7 @@ O NEXUS organiza os dados mensais da SENATRAN no fluxo **Veículos → modelo �
 
 São necessários Windows compatível com Docker Desktop, virtualização habilitada, WSL 2, internet na instalação e pelo menos 15 GB livres inicialmente. O instalador orienta sobre permissões e reinicialização; não reinicia o computador. Depois de resolver um requisito, execute-o novamente. Dependendo do volume de dados, será necessário mais espaço.
 
-O instalador preserva configurações e contas existentes. Valores de exemplo são identificados. Logs operacionais ficam em `data/logs/windows.log`; senhas não são registradas. A inicialização diária reutiliza as imagens prontas. Se alguma imagem estiver ausente após uma instalação incompleta, iniciar.bat prepara as dependências automaticamente e solicita a criação do administrador caso necessário. Para preparar uma versão nova do código, faça backup e execute instalar.bat novamente.
+O instalador preserva configurações e contas existentes. Valores de exemplo são identificados. Logs operacionais ficam em `data/logs/windows.log`; senhas não são registradas. A inicialização diária reutiliza as imagens prontas. Se alguma imagem estiver ausente após uma instalação incompleta, iniciar.bat prepara as dependências automaticamente e solicita a criação do administrador caso necessário.
 
 ### Dados da Senatran pelo dashboard
 
@@ -19,9 +19,9 @@ Entre em **Administração → Atualizações → Dados da Senatran**. O catálo
 
 O NEXUS consulta o catálogo de arquivos e a página oficial de publicações no gov.br. Se o catálogo de marca/modelo estiver indisponível, os meses publicados continuam visíveis pela página oficial, com um link para conferir a fonte. Publicação e disponibilidade do arquivo são indicadas separadamente; o sistema não tenta importar uma página HTML como relatório. Se ambas as fontes falharem, a última lista válida é preservada. Consultas não são repetidas em segundo plano; tente novamente pelo botão depois de pelo menos um minuto. Não é necessário reinstalar.
 
-Escolha o ano e clique em **Baixar e importar mês** no mês desejado. O NEXUS encontra os links oficiais, baixa e importa sequencialmente os relatórios disponíveis, sem solicitar arquivos ao usuário. Marca/modelo, tipo/espécie/eixos e as demais planilhas têm progresso e falhas separados. A indisponibilidade de marca/modelo não bloqueia os outros arquivos, mas os modelos e suas quantidades dependem dessa base. Instalar uma planilha complementar não significa concluir toda a competência.
+Escolha o ano e clique em **Baixar e importar mês** no mês desejado. O NEXUS baixa e processa o arquivo de marca/modelo e o relatório de combustível quando disponível. Os demais relatórios não permitem isolar com segurança a frota eletrificada.
 
-Em **Veículos**, escolha o mês no campo **Referência SENATRAN** para consultar os modelos eletrificados reconhecidos. Em **Relatórios**, explore as quantidades por modelo, estado e município. Os arquivos complementares são preservados para rastreabilidade; a interface não apresenta a antiga tabela de planilhas brutas. **Retomar** aproveita os checkpoints existentes. **Verificar revisão** consulta novamente o conteúdo de um mês instalado; só é indicada uma revisão disponível quando os metadados da fonte demonstram mudança.
+Em **Veículos**, escolha o mês no campo **Referência SENATRAN** para consultar os modelos eletrificados reconhecidos. Em **Relatórios**, explore as quantidades por modelo, estado e município. O sistema guarda o recorte eletrificado e a referência da fonte. **Retomar** aproveita os checkpoints existentes. **Verificar revisão** consulta novamente o conteúdo de um mês instalado; só é indicada uma revisão disponível quando os metadados da fonte demonstram mudança.
 
 Os controles são independentes:
 
@@ -43,7 +43,7 @@ A alternativa por terminal usa o mesmo serviço do painel:
 docker compose exec api python -m scripts.download_month --reference 2026-08
 ```
 
-Acrescente `--refresh` para verificar uma revisão. O clone não inclui frota, banco ou credenciais. Cada mês pode ocupar vários GB; importações preservam os originais, histórico e a publicação anterior em caso de falha. Importar um mês antigo não altera a publicação padrão mais recente.
+Acrescente `--refresh` para verificar uma revisão. O clone não inclui frota, banco ou credenciais. Cada mês pode ocupar vários GB durante a importação; os arquivos completos são removidos após a publicação validada. O histórico de publicações e a publicação anterior permanecem disponíveis em caso de falha. Importar um mês antigo não altera a publicação padrão mais recente.
 
 ### Garantia e saúde das baterias
 
@@ -121,18 +121,13 @@ Para processar um arquivo já disponível, sem internet:
 .venv/Scripts/python.exe -m src.worker --once --no-schedule --import-file CAMINHO_DO_ZIP --reference 2026-07
 ```
 
-A retomada preserva os blocos confirmados. Administração mostra execução, erro e progresso. A reclassificação administrativa usa os arquivos originais preservados.
+A retomada preserva os blocos confirmados. Administração mostra execução, erro e progresso. A reclassificação de um mês já processado baixa novamente o arquivo oficial e confere seu hash.
 
-## Atualização automática e backups
+## Atualização automática
 
-A instalação padrão não utiliza agendamentos nem inicia junto com o Windows. A consulta ocorre ao iniciar o programa ou pelo botão Verificar atualizações. O script legado `scripts/install-tasks.ps1` é exclusivo para operação administrada e não faz parte desta instalação. Os comandos de manutenção abaixo exigem o ambiente Python de desenvolvimento, `DATABASE_URL` apontando para o PostgreSQL a copiar e ferramentas PostgreSQL 17 (`pg_dump`, `pg_restore`, `createdb` e `dropdb`) no PATH ou em `I9_PG_BIN`. Não são executados automaticamente pelos atalhos:
+A instalação padrão não utiliza agendamentos nem inicia junto com o Windows. A consulta ocorre ao iniciar o programa ou pelo botão Verificar atualizações. Os dados brutos completos da SENATRAN são temporários; após a publicação validada, permanece o recorte eletrificado e a referência à fonte.
 
-```powershell
-.venv/Scripts/python.exe -m scripts.operations backup
-.venv/Scripts/python.exe -m scripts.operations restore-test --path CAMINHO_DO_BACKUP
-```
-
-O backup contém o dump PostgreSQL e o manifesto dos originais. Configure `I9_BACKUP_DIR` para outro disco ou destino adequado. Cópias somente neste computador não protegem contra perda do equipamento. Consulte `docs/Operacao-v3.md`.
+O dashboard **Oportunidades** mostra baterias individuais medidas e, separadamente, estimativas regionais. Em Administração é possível ativar uma simulação de leitura, com 71 campos por bateria fictícia, sem modificar registros reais. A integração futura de medições está documentada em [Integração de baterias](docs/Integracao_Baterias.md).
 
 ## Desenvolvimento e validação
 
@@ -151,8 +146,8 @@ Testes de concorrência exigem `I9_TEST_DATABASE_URL` e usam esquemas descartáv
 
 ## Repositório e atualização
 
-Versione o código, as migrações, os atalhos, `.env.example` e os arquivos de dependências (incluindo `dashboard/package-lock.json`). `.env`, senhas, volumes, arquivos baixados, logs, backups, `node_modules` e `dist` ficam fora do Git. Um clone novo começa sem os dados mensais: instale o sistema e escolha os meses em Administração.
+Versione o código, as migrações, os atalhos, `.env.example` e os arquivos de dependências (incluindo `dashboard/package-lock.json`). `.env`, senhas, volumes, arquivos baixados, logs, `node_modules` e `dist` ficam fora do Git. Um clone novo começa sem os dados mensais: instale o sistema e escolha os meses em Administração.
 
 O nome público é NEXUS. Os identificadores técnicos `I9_*` e o banco `i9` continuam por compatibilidade. Em uma instalação existente, preserve a pasta do projeto e o nome do projeto Compose para reutilizar o volume correto. Não use `docker compose down -v` para atualizar: esse comando remove os volumes.
 
-Antes de atualizar uma instalação com dados, faça e confira um backup. Atualize o código e execute `instalar.bat` para reconstruir as imagens e aplicar as migrações; depois use `iniciar.bat`. Os testes automatizados do instalador simulam requisitos e preservação de configurações; não substituem a validação em um Windows limpo, especialmente WSL, virtualização, permissões e reinicialização.
+Para atualizar, execute `instalar.bat` para reconstruir as imagens e aplicar as migrações; depois use `iniciar.bat`. Os testes automatizados do instalador simulam requisitos e preservação de configurações; não substituem a validação em um Windows limpo, especialmente WSL, virtualização, permissões e reinicialização.

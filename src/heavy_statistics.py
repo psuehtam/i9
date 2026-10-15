@@ -63,45 +63,13 @@ def import_type_species_axles(path,reference,lease,url=None):
     with job_transaction(lease,'heavy-artifact') as c:
         _upsert_nothing(c,s.source_snapshot,dict(id=source_id,provider='SENATRAN',dataset_name='tipo-especie-eixos',
             reference_period=reference,retrieved_at=timestamp(),method='public_monthly_aggregate',raw_file_hash=raw_hash,
-            raw_storage_path=str(path),source_version='2026',transformation_version='heavy-stat-1',license_or_terms='Dados públicos SENATRAN',
+            raw_storage_path=None,source_version='2026',transformation_version='heavy-stat-1',license_or_terms='Dados públicos SENATRAN',
             ingestion_status='staging',source_url=url,scope='Estatística independente de tipo, espécie e eixos',metric='fleet_stock',
-            access_level='public',record_count=0,metadata={'pipeline_job_id':lease['job_id'],'no_model_join':True}))
-    scanned=stored=0
-    for index,(member,frame) in enumerate(frames(path)):
-        with job_transaction(lease,'heavy-parse') as c:
-            if _block_result(c,lease,'heavy:'+source_id,index):
-                scanned+=len(frame);continue
-        header={column:ALIASES.get(normalize(column)) for column in frame.columns}
-        available={value for value in header.values() if value}
-        missing={'state','municipality','vehicle_type','quantity'}-available
-        if missing:raise ValueError('Arquivo 08 sem colunas obrigatórias: '+', '.join(sorted(missing)))
-        rows=[]
-        for offset,record in enumerate(frame.to_dict('records')):
-            values={header[k]:v for k,v in record.items() if header.get(k)}
-            raw_type=normalize(values.get('vehicle_type') or '')
-            vehicle_type=HEAVY_TYPES.get(raw_type)
-            if not vehicle_type:continue
-            raw_quantity=str(values.get('quantity') or '').strip()
-            if not re.fullmatch(r'\d+(?:\.0+)?',raw_quantity):raise ValueError('Quantidade inválida no arquivo 08')
-            raw_axles=normalize(values.get('axles') or '')
-            axles=int(raw_axles) if raw_axles.isdigit() else None
-            state=UF_NAMES.get(normalize(values.get('state') or ''),normalize(values.get('state') or '')) or None
-            identity=canonical([member,scanned+offset+2,state,values.get('municipality'),raw_type,values.get('species'),raw_axles,raw_quantity])
-            rows.append(dict(id=stable(source_id+identity),source_snapshot_id=source_id,reference_period=reference,dataset='tipo-especie-eixos',
-                state=state,municipality=values.get('municipality') or None,vehicle_type=vehicle_type,
-                species=values.get('species') or None,axles=axles,quantity=int(raw_quantity.split('.')[0]),
-                source_record_reference=hashlib.sha256(identity.encode()).hexdigest()))
-        with job_transaction(lease,'heavy-persist') as c:
-            lock_lease(c,lease)
-            if rows:
-                dialect=__import__('sqlalchemy.dialects.postgresql',fromlist=['insert']).insert if c.dialect.name=='postgresql' else __import__('sqlalchemy.dialects.sqlite',fromlist=['insert']).insert
-                for start in range(0,len(rows),1000):
-                    c.execute(dialect(o.heavy_stat).values(rows[start:start+1000]).on_conflict_do_nothing(
-                        index_elements=['source_snapshot_id','source_record_reference']))
-            scanned+=len(frame);stored+=len(rows)
-            _commit_block(c,lease,'heavy:'+source_id,index,{'scanned_rows':scanned,'stored_rows':stored})
-            c.execute(update(ps.job).where(ps.job.c.id==lease['job_id']).values(progress={'scanned_rows':scanned,'stored_rows':stored,'source_snapshot_id':source_id}))
+            access_level='public',record_count=0,metadata={'pipeline_job_id':lease['job_id'],'no_model_join':True,
+                'scope':'metadata_only; tipo/espécie/eixos não informa eletrificação'}))
+    # This report contains combustion vehicles and cannot be joined to the
+    # model-level electrification evidence. Keep provenance only.
     with job_transaction(lease,'heavy-complete') as c:
-        count=c.execute(select(func.count()).select_from(o.heavy_stat).where(o.heavy_stat.c.source_snapshot_id==source_id)).scalar_one()
-        c.execute(update(s.source_snapshot).where(s.source_snapshot.c.id==source_id).values(ingestion_status='success',record_count=count))
-    return {'source_snapshot_id':source_id,'reference':reference,'rows':count,'dataset':'tipo-especie-eixos','no_model_join':True}
+        c.execute(update(s.source_snapshot).where(s.source_snapshot.c.id==source_id).values(ingestion_status='success',record_count=0))
+    if path.is_relative_to((db.ROOT/'data/raw/pipeline').resolve()):path.unlink(missing_ok=True)
+    return {'source_snapshot_id':source_id,'reference':reference,'rows':0,'dataset':'tipo-especie-eixos','no_model_join':True}

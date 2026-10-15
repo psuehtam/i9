@@ -18,6 +18,7 @@ FIAT = 'https://www.fiat.com.br/'
 # Longest prefixes must win (Seal DM before Seal; Dolphin Mini before Dolphin).
 # propulsion: BEV, PHEV, HEV, HEV_FLEX, FCEV.
 FAMILIES = [
+    ('Mercedes-Benz', 'eO500U', ['M BENZ EO500U', 'MERCEDES BENZ EO500U'], 'BEV'),
     ('BYD', 'Dolphin Mini', ['BYD DOLPHIN MINI'], 'BEV'),
     ('BYD', 'Dolphin', ['BYD DOLPHIN'], 'BEV'),
     ('BYD', 'Seal DM-i', ['BYD SEAL DM I', 'BYD SEAL DM', 'BYD SEAL U DM'], 'PHEV'),
@@ -76,7 +77,8 @@ FAMILIES = [
     ('Toyota', 'Corolla Hybrid', ['TOYOTA COROLLA HEV', 'TOYOTA COROLLA HYBRID', 'TOYOTA COROLLA HIBRIDO', 'TOYOTA COROLLA ALTIS HEV', 'TOYOTA COROLLA ALTIS HYBRID'], 'HEV'),
     ('Toyota', 'Prius', ['TOYOTA PRIUS'], 'HEV'),
     ('Toyota', 'Camry Hybrid', ['TOYOTA CAMRY HEV', 'TOYOTA CAMRY HYBRID'], 'HEV'),
-    ('Toyota', 'RAV4 Hybrid', ['TOYOTA RAV4 HEV', 'TOYOTA RAV4 HYBRID', 'TOYOTA RAV4 PHEV', 'TOYOTA RAV4 PRIME'], 'HEV'),
+    ('Toyota', 'RAV4 Hybrid', ['TOYOTA RAV4 HEV', 'TOYOTA RAV4 HYBRID'], 'HEV'),
+    ('Toyota', 'RAV4 Plug-in', ['TOYOTA RAV4 PHEV', 'TOYOTA RAV4 PRIME'], 'PHEV'),
     ('Toyota', 'Yaris Hybrid', ['TOYOTA YARIS HEV', 'TOYOTA YARIS HYBRID'], 'HEV'),
     ('Lexus', 'NX Hybrid', ['LEXUS NX HEV', 'LEXUS NX HYBRID', 'LEXUS NX 350H', 'LEXUS NX350H'], 'HEV'),
     ('Lexus', 'UX Hybrid', ['LEXUS UX HEV', 'LEXUS UX HYBRID', 'LEXUS UX 250H', 'LEXUS UX250H'], 'HEV'),
@@ -85,9 +87,11 @@ FAMILIES = [
     ('Honda', 'HR-V Hybrid', ['HONDA HRV HEV', 'HONDA HR V HEV', 'HONDA HRV HYBRID', 'HONDA HR V HYBRID'], 'HEV'),
     ('Honda', 'Accord Hybrid', ['HONDA ACCORD HEV', 'HONDA ACCORD HYBRID', 'HONDA ACCORD E HEV'], 'HEV'),
     ('Ford', 'Territory Hybrid', ['FORD TERRITORY HEV', 'FORD TERRITORY HYBRID'], 'HEV'),
-    ('Kia', 'Sportage Hybrid', ['KIA SPORTAGE HEV', 'KIA SPORTAGE HYBRID', 'KIA SPORTAGE PHEV'], 'HEV'),
+    ('Kia', 'Sportage Hybrid', ['KIA SPORTAGE HEV', 'KIA SPORTAGE HYBRID'], 'HEV'),
+    ('Kia', 'Sportage Plug-in', ['KIA SPORTAGE PHEV'], 'PHEV'),
     ('Kia', 'Niro Hybrid', ['KIA NIRO HEV', 'KIA NIRO HYBRID'], 'HEV'),
-    ('Hyundai', 'Tucson Hybrid', ['HYUNDAI TUCSON HEV', 'HYUNDAI TUCSON HYBRID', 'HYUNDAI TUCSON PHEV'], 'HEV'),
+    ('Hyundai', 'Tucson Hybrid', ['HYUNDAI TUCSON HEV', 'HYUNDAI TUCSON HYBRID'], 'HEV'),
+    ('Hyundai', 'Tucson Plug-in', ['HYUNDAI TUCSON PHEV'], 'PHEV'),
     ('Hyundai', 'Kona Hybrid', ['HYUNDAI KONA HEV', 'HYUNDAI KONA HYBRID'], 'HEV'),
     ('Mitsubishi', 'Outlander PHEV', ['MITSUBISHI OUTLANDER PHEV', 'MMC OUTLANDER PHEV'], 'PHEV'),
     ('Volvo', 'XC60 T8', ['VOLVO XC60 T8', 'VOLVO XC60 PHEV', 'VOLVO XC60 RECHARGE'], 'PHEV'),
@@ -127,7 +131,7 @@ FAMILIES = [
     ('Porsche', 'Macan Electric', ['PORSCHE MACAN ELECTRIC', 'PORSCHE MACAN EV'], 'BEV'),
 ]
 
-HINT_TOKENS = {'HEV', 'PHEV', 'HYBRID', 'HIBRIDO', 'ELETRICO', 'ELECTRIC', 'BEV', 'EV', 'DM', 'PHEV', 'ETECH'}
+HINT_TOKENS = {'HEV', 'PHEV', 'MHEV', 'HYBRID', 'HIBRIDO', 'HIBRIDA', 'ELETRICO', 'ELETRICA', 'ELECTRIC', 'BEV', 'EV', 'DM', 'ETECH'}
 
 def _prefix_index():
     items = []

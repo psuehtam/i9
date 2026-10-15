@@ -28,6 +28,8 @@ def import_report(path, payload, lease):
     destination = folder / (source_id + '.jsonl')
     temporary = folder / (source_id + f'.{lease["job_id"]}.{lease["token"]}.part')
     count = 0
+    scanned = 0
+    fuel_report = 'COMBUSTIVEL' in p.normalize(payload['report_name'])
     sheets = []
     try:
         with path.open('rb') as stream, temporary.open('w', encoding='utf-8') as output:
@@ -35,8 +37,19 @@ def import_report(path, payload, lease):
             try:
                 for sheet in workbook.worksheets:
                     start = count
+                    fuel_index = None
                     for row_number, values in enumerate(sheet.iter_rows(values_only=True), 1):
                         if not any(value is not None for value in values):
+                            continue
+                        scanned += 1
+                        if fuel_report and fuel_index is None:
+                            names = [p.normalize(str(value or '')) for value in values]
+                            fuel_index = names.index('COMBUSTIVEL VEICULO') if 'COMBUSTIVEL VEICULO' in names else None
+                            if fuel_index is None:
+                                continue
+                        elif not fuel_report or fuel_index is None or fuel_index >= len(values):
+                            continue
+                        elif 'ELETRIC' not in p.normalize(str(values[fuel_index] or '')) and 'HIBRIDO' not in p.normalize(str(values[fuel_index] or '')):
                             continue
                         output.write(json.dumps({'sheet': sheet.title, 'row': row_number, 'values': values}, ensure_ascii=False, default=str) + '\n')
                         count += 1
@@ -48,7 +61,7 @@ def import_report(path, payload, lease):
                     sheets.append({'name': sheet.title, 'rows': count - start})
             finally:
                 workbook.close()
-        if not count:
+        if not scanned:
             raise p.PermanentError('A planilha oficial não contém dados.')
         # Publish only after complete parsing and a valid lease. Existing versions stay readable.
         with p.job_transaction(lease, 'report-publish') as c:
@@ -56,13 +69,16 @@ def import_report(path, payload, lease):
             p._upsert_nothing(c, s.source_snapshot, dict(id=source_id, provider='SENATRAN',
                 dataset_name='official-report:' + payload['report_id'], reference_period=payload['reference'],
                 retrieved_at=p.timestamp(), method='official_workbook', raw_file_hash=checksum,
-                raw_storage_path=str(path), source_url=payload['url'], ingestion_status='success',
+                raw_storage_path=None, source_url=payload['url'], ingestion_status='success',
                 record_count=count, access_level='public', transformation_version='workbook-1',
                 metadata={'name': payload['report_name'], 'rows_path': str(destination), 'sheets': sheets,
+                          'scanned_rows':scanned,'scope':'electrified_fuel_only' if fuel_report else 'metadata_only',
                           'report_id': payload['report_id'], 'pipeline_job_id': lease['job_id']}))
         return {'source_snapshot_id': source_id, 'rows': count, 'report_name': payload['report_name']}
     finally:
         temporary.unlink(missing_ok=True)
+        resolved=path.resolve()
+        if resolved.is_relative_to((db.ROOT/'data/raw/pipeline').resolve()):resolved.unlink(missing_ok=True)
 
 
 def reports(reference=None):
@@ -87,6 +103,9 @@ def report_rows(source_id, offset=0, limit=50, scope="all"):
             s.source_snapshot.c.method == 'official_workbook', s.source_snapshot.c.ingestion_status == 'success')).mappings().first()
     if not row:
         raise HTTPException(404, 'Relatório não encontrado.')
+    if (row['metadata'] or {}).get('scope') == 'metadata_only':
+        return {'items': [], 'total': 0, 'scope': 'metadata_only',
+                'note': 'Este relatório não separa elétricos e híbridos dos veículos a combustão.'}
     path = Path(row['metadata']['rows_path']).resolve()
     if not path.is_relative_to((db.ROOT / 'data/processed/senatran').resolve()) or not path.is_file():
         raise HTTPException(409, 'O arquivo importado não está disponível.')

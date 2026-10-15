@@ -11,26 +11,27 @@ RESOURCES = [
 ]
 
 
-def test_month_imports_all_available_reports_without_primary(database, monkeypatch):
+def test_month_requires_electrified_source(database, monkeypatch):
     monkeypatch.setenv('ALLOW_SOURCE_DOWNLOAD', 'true')
     months.refresh_catalog(RESOURCES)
     assert not p.list_jobs()
-    first = months.request_import('2026-01', False, 'one')
-    assert len(first['job_ids']) == 2
-    assert months.request_import('2026-01', False, 'two') == first
-    jobs = p.list_jobs()
-    assert all(j['kind'] == 'official_report_remote' for j in jobs)
-    assert len({j['payload']['report_id'] for j in jobs}) == 2
-    assert all(r['job']['status'] == 'queued' for r in months.months()['items'][0]['reports'])
+    with pytest.raises(Exception) as error:months.request_import('2026-01', False, 'one')
+    assert getattr(error.value, 'status_code', None) == 409
+    assert not p.list_jobs()
 
 
 def test_concurrent_month_reports_share_jobs(postgres, monkeypatch):
     monkeypatch.setenv('ALLOW_SOURCE_DOWNLOAD', 'true')
     months.refresh_catalog(RESOURCES)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda key: months.request_import('2026-01', False, key), ['one', 'two']))
-    assert results[0] == results[1]
-    assert len(results[0]['job_ids']) == 2
+        results = list(pool.map(lambda key: _request_status(key), ['one', 'two']))
+    assert results == [409, 409]
+
+
+def _request_status(key):
+    try:months.request_import('2026-01', False, key)
+    except Exception as exc:return exc.status_code
+    return 200
 
 
 def test_workbook_import_is_readable_and_idempotent(client, database, monkeypatch, tmp_path):
@@ -45,19 +46,19 @@ def test_workbook_import_is_readable_and_idempotent(client, database, monkeypatc
     p.enqueue('official_report_remote', payload, 'test')
     lease = p.claim('test')
     result = reports.import_report(path, payload, lease)
-    assert result['rows'] == 2
+    assert result['rows'] == 0  # Report without fuel is metadata-only.
     assert reports.import_report(path, payload, lease)['source_snapshot_id'] == result['source_snapshot_id']
     assert len(reports.reports()['items']) == 1
     response = client.get(f"/api/v3/senatran/reports/{result['source_snapshot_id']}/rows?offset=1&limit=1")
     assert response.status_code == 200
-    assert response.json()['items'][0]['values'] == ['SP', 120]
+    assert response.json()['items'] == []
     assert client.get('/api/v3/senatran/reports').json()['items'][0]['reference'] == '2026-01'
     workbook.active.delete_rows(1, 2)
     workbook.save(path)
     with pytest.raises(p.PermanentError):
         reports.import_report(path, payload, lease)
     assert len(reports.reports()['items']) == 1
-    assert reports.report_rows(result['source_snapshot_id'])['total'] == 2
+    assert reports.report_rows(result['source_snapshot_id'])['total'] == 0
 
 
 def test_fuel_scope_excludes_combustion_and_paginates(client, database, monkeypatch, tmp_path):

@@ -304,9 +304,9 @@ HEADER_ALIASES = {
     'QUANTIDADE': 'quantity', 'QTD VEICULOS': 'quantity', 'QTD': 'quantity', 'QTDE': 'quantity', 'TOTAL': 'quantity',
     'TIPO VEICULO': 'category', 'TIPO DE VEICULO': 'category', 'CATEGORIA': 'category',
 }
-CATEGORIES = {'AUTOMOVEL': 'car', 'CAMINHONETE': 'light_commercial', 'CAMIONETA': 'light_commercial',
+CATEGORIES = {'AUTOMOVEL': 'car', 'CAMINHONETE': 'utility', 'CAMIONETA': 'utility',
               'MOTOCICLETA': 'motorcycle', 'MOTONETA': 'motorcycle', 'CICLOMOTOR': 'motorcycle',
-              'ONIBUS': 'bus', 'MICRO ONIBUS': 'bus', 'CAMINHAO': 'truck', 'CAMINHAO TRATOR': 'truck'}
+              'ONIBUS': 'bus', 'MICRO ONIBUS': 'microbus', 'CAMINHAO': 'truck', 'CAMINHAO TRATOR': 'tractor_truck'}
 
 
 def _normal_text(value):
@@ -496,7 +496,10 @@ def parse_artifact(artifact_id, lease):
             records.append(dict(**_normalize_row(row.to_dict(),header,artifact['reference']),member=member,line_number=scanned+int(frame.index.get_loc(position))+2))
         rest=pd.DataFrame({'raw_name':frame.loc[~chosen,name_col].map(names),'quantity':qty.loc[~chosen].astype('int64')})
         grouped=rest.groupby('raw_name',sort=True)['quantity'].agg(['sum','count'])
-        summaries=[dict(raw_name=str(name),quantity=int(row['sum']),row_count=int(row['count']),status=decision(str(name)),electrified_hint=hint(str(name))) for name,row in grouped.iterrows()]
+        # Pending names help reviewers find missed electrified models, but no
+        # quantity or combustion-only model is retained in the database.
+        summaries=[dict(raw_name=str(name),quantity=0,row_count=0,status='pending',electrified_hint=hint(str(name)))
+                   for name,row in grouped.iterrows() if decision(str(name))=='pending']
         scanned+=len(frame)
         _persist_filtered_chunk(artifact_id,records,summaries,scanned,chunk_index,lease)
     if not scanned:raise PermanentError('Arquivo não contém observações')
@@ -647,9 +650,10 @@ def _classify(name, frozen):
                 'status': 'recognized' if override['decision'] == 'include' else 'excluded'}
     for prefix, brand, model, propulsion in frozen['prefixes']:
         if name == prefix or name.startswith(prefix + ' '):
-            return {'manufacturer': brand, 'model': model, 'powertrain': propulsion, 'category': 'unknown',
+            known_bus=prefix in {'M BENZ EO500U','MERCEDES BENZ EO500U'}
+            return {'manufacturer': brand, 'model': model, 'powertrain': propulsion, 'category': 'bus' if known_bus else 'unknown',
                     'vehicle_subtype':None,'segment':None,'body_type':None,
-                    'evidence': 'Catálogo revisado local; categoria não inferida pelo nome', 'status': 'recognized'}
+                    'evidence': 'https://www.mercedes-benz-trucks.com.br/onibus/eletrico/tecnologia/bateria' if known_bus else 'Catálogo revisado local; categoria não inferida pelo nome', 'status': 'recognized'}
     return {'status': 'pending', 'manufacturer': None, 'model': None, 'powertrain': None,
             'category': None,'vehicle_subtype':None,'segment':None,'body_type':None,'evidence': None}
 
@@ -787,11 +791,13 @@ def pending_reviews(classification_id=None, limit=50, after='', offset=0, paged=
         if not classification_id:return {'items':[],'total':0,'offset':offset,'limit':limit} if paged else []
         artifact_id=c.execute(select(p.content.c.artifact_id).join(p.classification).where(p.classification.c.id==classification_id)).scalar_one()
         t=p.filtered_summary
-        query=select(t.c.raw_name,func.sum(t.c.quantity).label('quantity'),func.max(t.c.electrified_hint).label('electrified_hint')).where(t.c.artifact_id==artifact_id,t.c.status=='pending',t.c.raw_name>after,
+        query=select(t.c.raw_name,func.sum(t.c.quantity).label('quantity'),func.max(t.c.electrified_hint).label('electrified_hint')).where(t.c.artifact_id==artifact_id,t.c.status=='pending',t.c.electrified_hint==1,t.c.raw_name>after,
             ~select(p.rule.c.id).where(p.rule.c.raw_name==t.c.raw_name).exists()).group_by(t.c.raw_name)
         total=c.execute(select(func.count()).select_from(query.subquery())).scalar()
         rows=c.execute(query.order_by(func.max(t.c.electrified_hint).desc(),t.c.raw_name).limit(min(200,max(1,limit))).offset(offset)).mappings()
-        items=[dict(row,classification_id=classification_id) for row in rows]
+        items=[dict(row,classification_id=classification_id,
+            reason='Nome sugere eletrificação, mas falta confirmar versão, ano e motorização.',
+            source='SENATRAN — marca/modelo; comprovação técnica pendente') for row in rows]
         return {'items':items,'total':total,'offset':offset,'limit':limit} if paged else items
 
 
@@ -1196,10 +1202,19 @@ def _execute(lease):
             raise PermanentError('Conteúdo não pertence à competência solicitada')
         with db.engine.connect() as c:
             old_artifact=c.execute(select(p.artifact).join(p.content,p.content.c.artifact_id==p.artifact.c.id).where(p.content.c.id==content_id)).mappings().one()
-        with Path(old_artifact['path']).open('rb') as original:
-            if hashlib.file_digest(original,'sha256').hexdigest()!=old_artifact['raw_sha256']:
-                raise PermanentError('Original alterado; reclassificação bloqueada para preservar a procedência')
-        artifact=register_artifact(Path(old_artifact['path']),reference,lease,old_artifact.get('url'))
+        old_path=Path(old_artifact['path'])
+        if old_path.is_file():
+            with old_path.open('rb') as original:
+                if hashlib.file_digest(original,'sha256').hexdigest()!=old_artifact['raw_sha256']:
+                    raise PermanentError('Original alterado; reclassificação bloqueada para preservar a procedência')
+            path=old_path
+        elif old_artifact.get('url'):
+            path=_download({**job,'kind':'import_remote','payload':{'url':old_artifact['url']}},lease)
+            with Path(path).open('rb') as original:
+                if hashlib.file_digest(original,'sha256').hexdigest()!=old_artifact['raw_sha256']:
+                    raise PermanentError('Fonte mudou; reclassificação requer nova revisão do mês')
+        else:raise PermanentError('Original indisponível e sem URL; informe uma nova importação')
+        artifact=register_artifact(path,reference,lease,old_artifact.get('url'))
         content_id=parse_artifact(artifact['id'],lease)
     else:
         with job_transaction(lease, 'download') as c:
@@ -1227,6 +1242,13 @@ def _execute(lease):
             metadata.update(pipeline_generation=job['generation'], pipeline_job_id=job['id'])
             c.execute(update(s.source_snapshot).where(s.source_snapshot.c.id == source_id).values(metadata=metadata))
     publication = _materialize(source_id, lease)
+    if publication.get('status') == 'complete':
+        with db.engine.begin() as c:
+            path=c.execute(select(p.artifact.c.path).join(p.content,p.content.c.artifact_id==p.artifact.c.id)
+                .where(p.content.c.id==content_id)).scalar_one()
+            c.execute(update(s.source_snapshot).where(s.source_snapshot.c.id==source_id).values(raw_storage_path=None))
+        target=Path(path).resolve()
+        if target.is_relative_to((db.ROOT/'data/raw/pipeline').resolve()):target.unlink(missing_ok=True)
     return {'source_snapshot_id': source_id, 'content_id': content_id, 'equivalent': equivalent, 'publication': publication}
 
 

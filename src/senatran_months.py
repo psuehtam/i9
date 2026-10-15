@@ -105,6 +105,8 @@ def request_import(reference, refresh, key, dataset='all'):
     selected = {'all': None, 'primary': 'import_remote', 'complement': 'heavy_stats_remote'}
     if dataset not in selected:
         raise HTTPException(422, 'Relatório inválido.')
+    if dataset == 'complement':
+        raise HTTPException(422, 'Tipo/espécie/eixos não informa eletrificação e não pode ser guardado no recorte eletrificado.')
     try:
         p.validate_reference(reference)
     except ValueError as exc:
@@ -135,8 +137,11 @@ def request_import(reference, refresh, key, dataset='all'):
             raise HTTPException(409, 'O arquivo deste relatório está indisponível. Atualize a lista.')
         groups = {kind: entries for kind, entries in groups.items() if entries and (dataset == 'all' or kind == required)}
         if dataset == 'all':
+            groups = {kind:entries for kind,entries in groups.items() if kind == 'import_remote'}
+        if dataset == 'all':
             for url, report in catalog.get('reports', {}).get(reference, {}).items():
-                groups['report:' + p.digest(url)] = {url: report}
+                if 'COMBUSTIVEL' in p.normalize(report['name']):
+                    groups['report:' + p.digest(url)] = {url: report}
         if not groups:
             raise HTTPException(409, 'Nenhum arquivo disponível para este mês. Atualize a lista.')
         if any(len(items) != 1 for items in groups.values()):

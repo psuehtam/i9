@@ -10,8 +10,81 @@ from sqlalchemy.exc import IntegrityError
 from src import db,intelligence_schema as s,operational_schema as o,fleet_publication as fleet,registry_service as service
 from src.auth import require_admin
 from src.connectors.public import now
+from src import opportunities
 
 router=APIRouter(prefix='/api/v3',tags=['Veículos e baterias'])
+
+@router.get('/opportunities/settings')
+def opportunity_settings():
+    with db.engine.connect() as c:
+        rows={r.key:r.value for r in c.execute(select(o.setting).where(o.setting.c.key.in_(['opportunity_mode','opportunity_soh_limit'])))}
+    return {'mode':(rows.get('opportunity_mode') or {}).get('mode','real'),
+            'soh_limit':(rows.get('opportunity_soh_limit') or {}).get('value',80)}
+
+class OpportunitySettings(BaseModel):
+    mode:str|None=None
+    soh_limit:float|None=Field(None,ge=50,le=100)
+
+@router.put('/admin/opportunities/settings')
+def set_opportunity_settings(body:OpportunitySettings,user=Depends(require_admin)):
+    if body.mode is not None and body.mode not in ('real','simulated'):raise HTTPException(422,'Modo inválido')
+    with db.engine.begin() as c:
+        for key,value in [('opportunity_mode',{'mode':body.mode} if body.mode else None),
+                          ('opportunity_soh_limit',{'value':body.soh_limit} if body.soh_limit is not None else None)]:
+            if value is None:continue
+            from src.fleet_publication import insert_once
+            insert_once(c,o.setting,dict(key=key,value=value,updated_at=now()),['key'])
+            c.execute(update(o.setting).where(o.setting.c.key==key).values(value=value,updated_at=now()))
+    return opportunity_settings()
+
+@router.get('/opportunities')
+def opportunity_list(reference:str|None=None,state:str|None=None,municipality:str|None=None,
+                     vehicle_category:str|None=None,powertrain_type:str|None=None,model:str|None=None,
+                     limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0)):
+    settings=opportunity_settings()
+    with db.engine.connect() as c:
+        fn=opportunities.simulated_rows if settings['mode']=='simulated' else opportunities.real_rows
+        result=fn(c,reference,state,municipality,vehicle_category,powertrain_type,model,limit,offset,settings['soh_limit'])
+    return {'mode':settings['mode'],'soh_limit':settings['soh_limit'],**result}
+
+@router.get('/opportunities/simulated/{vehicle_id}/passport')
+def simulated_opportunity_passport(vehicle_id:str):
+    if opportunity_settings()['mode']!='simulated':raise HTTPException(404,'Simulação desativada')
+    with db.engine.connect() as c:
+        reg=service.resolve_vehicle(c,vehicle_id)
+        v=service.get(c,s.vehicle_asset,reg['vehicle_id'])
+        m=service.get(c,o.model,reg['current_model_id'])
+        locations=opportunities.location_weights(c)
+    return opportunities.simulated_profile(v,m,locations)
+
+@router.get('/opportunities/regions')
+def opportunity_regions(reference:str|None=None,state:str|None=None,municipality:str|None=None,
+                        vehicle_category:str|None=None,powertrain_type:str|None=None,model:str|None=None,
+                        limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0)):
+    with db.engine.connect() as c:
+        source=c.execute(select(s.source_snapshot).where(s.source_snapshot.c.provider=='SENATRAN',
+            s.source_snapshot.c.dataset_name.like('municipio-marca-modelo-ano-fabricacao%'),
+            s.source_snapshot.c.metric=='fleet_stock',s.source_snapshot.c.ingestion_status=='success',
+            *([s.source_snapshot.c.reference_period==reference] if reference else [])
+            ).order_by(s.source_snapshot.c.reference_period.desc(),s.source_snapshot.c.retrieved_at.desc()).limit(1)).mappings().first()
+        if not source:return {'items':[],'total':0,'reference':reference}
+        q=select(s.aggregate.c.state,s.aggregate.c.municipality,s.aggregate.c.manufacturer,s.aggregate.c.model,
+            s.aggregate.c.vehicle_category,s.aggregate.c.powertrain_type,s.aggregate.c.manufacture_year,
+            s.aggregate.c.quantity).where(s.aggregate.c.source_snapshot_id==source['id'])
+        for col,val in ((s.aggregate.c.state,state),(s.aggregate.c.municipality,municipality),
+                        (s.aggregate.c.vehicle_category,vehicle_category),(s.aggregate.c.powertrain_type,powertrain_type)):
+            if val:q=q.where(col==val)
+        if model:q=q.where(s.aggregate.c.model.ilike('%'+model+'%'))
+        grouped={}
+        for row in c.execute(q).mappings():
+            if not row['manufacture_year']:continue
+            key=(row['state'],row['municipality'],row['manufacturer'],row['model'],row['vehicle_category'],row['powertrain_type'])
+            item=grouped.setdefault(key,dict(zip(('state','municipality','manufacturer','model','vehicle_category','powertrain_type'),key),vehicles=0,older_vehicles=0))
+            item['vehicles']+=row['quantity']
+            if date.today().year-row['manufacture_year']>=8:item['older_vehicles']+=row['quantity']
+        items=sorted(grouped.values(),key=lambda r:(-r['older_vehicles'],-r['vehicles'],str(r['state']),str(r['model'])))
+        return {'items':items[offset:offset+limit],'total':len(items),'reference':source['reference_period'],
+                'note':'Cenário regional pela idade dos veículos. Não identifica bateria, saúde ou disponibilidade individual.'}
 
 LEGACY_SIZE_CATEGORIES=frozenset({'light','heavy','LMT'})
 
@@ -431,7 +504,7 @@ def admin_status(user=Depends(require_admin)):
     today=date.today();closed=today.replace(day=1)-timedelta(days=1)
     missing=[f'2026-{m:02d}' for m in range(1,min(closed.month,12)+1) if f'2026-{m:02d}' not in refs]
     return {'database':db.engine.dialect.name,'active':active,'last_attempt':recent[0] if recent else None,'next_check':(settings.get('next_check') or {}).get('scheduled_at'),
-        'worker':{'status':(settings.get('worker') or {}).get('state','unknown'),'last_seen_at':(settings.get('worker') or {}).get('checked_at')},'backup':settings.get('backup',{'status':'not_verified','last_success_at':None}),
+        'worker':{'status':(settings.get('worker') or {}).get('state','unknown'),'last_seen_at':(settings.get('worker') or {}).get('checked_at')},
         'cutover':settings.get('cutover',{'status':'not_recorded'}),'missing_references':missing,
         'updates_paused':os.getenv('I9_UPDATES_PAUSED','false').lower()=='true'}
 

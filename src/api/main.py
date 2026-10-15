@@ -404,6 +404,8 @@ from src.api.intelligence import router as intelligence_router
 app.include_router(intelligence_router)
 from src.api.fleet import router as fleet_router
 app.include_router(fleet_router)
+from src.api.battery_import import router as battery_import_router
+app.include_router(battery_import_router)
 from src.api.auth import router as auth_router
 app.include_router(auth_router)
 

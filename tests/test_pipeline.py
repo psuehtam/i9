@@ -143,10 +143,10 @@ def test_classification_retains_unknowns_and_does_not_invent_category(queue, tmp
         source = c.execute(select(s.source_snapshot).where(s.source_snapshot.c.id == source_id)).mappings().one()
         rows = c.execute(select(s.aggregate).where(s.aggregate.c.source_snapshot_id == source_id)).mappings().all()
         assert source['metadata']['recognized_quantity'] == 90
-        assert source['metadata']['pending_quantity'] == 100
+        assert source['metadata']['pending_quantity'] == 0
         assert len(rows) == 1
         assert rows[0]['vehicle_category'] == 'unknown'
-    assert q.pending_reviews()[0]['raw_name'] == 'TOYOTA COROLLA'
+    assert q.pending_reviews() == []  # No electrification hint, so not surfaced.
 
 
 def test_reclassification_rereads_preserved_original_and_freezes_rules(queue, tmp_path):
@@ -262,7 +262,7 @@ def test_only_recognized_rows_stored_and_approved_model_recovered(queue,tmp_path
     q.classify_content(content,lease);q.finish(lease,{})
     with queue.connect() as c:
         assert c.execute(select(func.count()).select_from(p.observation)).scalar_one()==1
-        assert c.execute(select(func.sum(p.filtered_summary.c.quantity))).scalar_one()==5
+        assert c.execute(select(func.sum(p.filtered_summary.c.quantity))).scalar_one()==0
     q.approve_rule('MARCA TESTE EV','include','Evidência de teste','tester','Marca','Teste EV','BEV','bus')
     q.enqueue('reclassify',{'content_id':content,'reference':'2026-01'},'recover-model')
     result=q.run_once()
@@ -291,7 +291,7 @@ def test_type_species_axles_is_independent_and_resumable(queue,tmp_path):
     assert result['status']=='complete',result.get('error')
     with queue.connect() as c:
         rows=c.execute(select(o.heavy_stat)).mappings().all()
-        assert len(rows)==1 and rows[0]['vehicle_type']=='bus' and rows[0]['quantity']==8
+        assert rows==[]  # This report cannot distinguish electric from combustion buses.
         assert c.execute(select(func.count()).select_from(s.aggregate)).scalar_one()==0
 
 
