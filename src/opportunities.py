@@ -1,13 +1,17 @@
 """Read-only real and simulated battery opportunity views."""
 import hashlib
 import heapq
+import gzip
+import json
+from threading import Lock, Thread
 from bisect import bisect_left
-from collections import defaultdict
+from collections import Counter
 from datetime import date
+from functools import lru_cache
 
 from sqlalchemy import and_, func, select
 
-from src import intelligence_schema as s, operational_schema as o
+from src import db, intelligence_schema as s, operational_schema as o
 from src.battery_passport import FIELDS
 
 
@@ -15,16 +19,26 @@ def _fraction(key):
     return int(hashlib.sha256(str(key).encode()).hexdigest()[:12], 16) / 0xFFFFFFFFFFFF
 
 
-def simulated_profile(vehicle, model, locations=()):
-    """Stable, non-persisted demonstration profile for one registry vehicle."""
+@lru_cache(maxsize=20000)
+def _family_fraction(model_key):
+    return _fraction('family:' + model_key)
+
+
+def _unit_fractions(vid):
+    digest = hashlib.sha256(str(vid).encode()).hexdigest()
+    return tuple(int(digest[start:start + 12], 16) / 0xFFFFFFFFFFFF for start in (0, 12, 24))
+
+
+def _simulated_seed(vehicle, model, locations=()):
+    """Cheap shared calculation; the 71 passport fields are made only on detail."""
     vid = vehicle['id']
+    year_fraction, unit, location_fraction = _unit_fractions(vid)
     year_simulated = not bool(vehicle.get('manufacture_year'))
-    simulated_year = vehicle.get('manufacture_year') or (2015 + int(_fraction('year:' + vid) * 11))
+    simulated_year = vehicle.get('manufacture_year') or (2015 + int(year_fraction * 11))
     vehicle = {**vehicle, 'manufacture_year': simulated_year}
     model_key = '|'.join(str(model.get(k) or vehicle.get(k) or '') for k in
                          ('manufacturer', 'model', 'trim', 'manufacture_year', 'powertrain_type', 'vehicle_category'))
-    family = _fraction('family:' + model_key)
-    unit = _fraction('unit:' + vid)
+    family = _family_fraction(model_key)
     age = max(0, date.today().year - (vehicle.get('manufacture_year') or 2020))
     category = model.get('vehicle_category') or 'unknown'
     powertrain = model.get('powertrain_type') or 'UNKNOWN'
@@ -46,13 +60,30 @@ def simulated_profile(vehicle, model, locations=()):
     simulated_location = False
     if not city and locations:
         if isinstance(locations, dict):
-            marker = _fraction('location:' + vid) * locations['total']
+            marker = location_fraction * locations['total']
             index = min(len(locations['rows']) - 1, bisect_left(locations['cumulative'], marker))
             state, city = locations['rows'][index]
         else:
-            index = min(len(locations) - 1, int(_fraction('location:' + vid) * len(locations)))
+            index = min(len(locations) - 1, int(location_fraction * len(locations)))
             state, city = locations[index][:2]
         simulated_location = True
+    return {'vid': vid, 'vehicle': vehicle, 'model_key': model_key, 'family': family,
+            'unit': unit, 'age': age, 'capacity': capacity, 'chemistry': chemistry,
+            'annual_loss': annual_loss, 'soh': soh, 'cycles': cycles, 'state': state,
+            'city': city, 'simulated_location': simulated_location,
+            'year_simulated': year_simulated, 'powertrain': powertrain}
+
+
+def simulated_profile(vehicle, model, locations=()):
+    """Stable, non-persisted demonstration profile for one registry vehicle."""
+    seed = _simulated_seed(vehicle, model, locations)
+    vid, vehicle, model_key = seed['vid'], seed['vehicle'], seed['model_key']
+    family, unit, age = seed['family'], seed['unit'], seed['age']
+    capacity, chemistry, annual_loss = seed['capacity'], seed['chemistry'], seed['annual_loss']
+    soh, cycles, powertrain = seed['soh'], seed['cycles'], seed['powertrain']
+    state, city, simulated_location = seed['state'], seed['city'], seed['simulated_location']
+    year_simulated = seed['year_simulated']
+    simulated_year = vehicle['manufacture_year']
     values = {}
     dynamic = {'61': str(soh), '62': str(soh), '67': 'Em uso no veículo', '68': str(cycles),
                '70': str(round(20 + 18 * unit, 1)), '71': str(round(20 + 60 * unit, 1))}
@@ -130,7 +161,7 @@ def status(soh, threshold, previous=None, latest_at=None):
             'distance_pct': distance, 'trend_pct': trend, 'threshold_pct': threshold}
 
 
-def real_rows(c, reference=None, state=None, municipality=None, category=None, powertrain=None, model=None, limit=50, offset=0, threshold=80):
+def real_rows(c, reference=None, state=None, municipality=None, category=None, powertrain=None, model=None, limit=50, offset=0, threshold=80, status_filter=None):
     # Identified vehicles only. Statistical placeholders never become real opportunities.
     q = select(s.vehicle_asset, o.registry.c.public_code, o.model.c.model.label('registry_model'),
                o.model.c.manufacturer.label('registry_manufacturer'), s.battery_asset.c.id.label('battery_id'),
@@ -163,11 +194,63 @@ def real_rows(c, reference=None, state=None, municipality=None, category=None, p
         output.append(item)
     order = {'priority': 0, 'near': 1, 'monitor': 2, 'stale': 3, 'insufficient': 4}
     output.sort(key=lambda x: (order[x['status']], x['distance_pct'] if x['distance_pct'] is not None else 999, x['id']))
+    if status_filter:output=[item for item in output if item['status']==status_filter]
     return {'items': output[offset:offset + limit], 'total': len(output), 'limit': limit, 'offset': offset}
 
 
-def simulated_rows(c, reference=None, state=None, municipality=None, category=None, powertrain=None, model=None, limit=50, offset=0, threshold=80):
-    q = select(s.vehicle_asset, o.registry.c.public_code, o.model.c.model.label('registry_model'),
+_simulated_cache = {}
+_simulated_cache_lock = Lock()
+
+
+def _store_snapshot(path, rows):
+    """Disposable compact simulation index, separate from real records."""
+    models, model_ids, places, place_ids, packed = [], {}, [], {}, []
+    for row in rows:
+        model = (row['registry_manufacturer'], row['registry_model'], row['registry_category'], row['registry_powertrain'])
+        place = (row['state'], row['municipality'], row['location_simulated'])
+        if model not in model_ids:
+            model_ids[model] = len(models); models.append(model)
+        if place not in place_ids:
+            place_ids[place] = len(places); places.append(place)
+        packed.append((row['id'], row['public_code'], model_ids[model], place_ids[place],
+                       row['manufacture_year'], row['year_simulated'], row['soh_percent'],
+                       row['capacity_kwh'], row['chemistry']))
+    temp_path = path.with_suffix('.part')
+    try:
+        with gzip.open(temp_path, 'wt', encoding='utf-8', compresslevel=1) as cached:
+            json.dump({'models': models, 'places': places, 'rows': packed}, cached,
+                      ensure_ascii=False, separators=(',', ':'))
+        temp_path.replace(path)
+        for old in path.parent.glob('opportunities-*.json.gz'):
+            if old != path: old.unlink(missing_ok=True)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def _load_snapshot(path):
+    with gzip.open(path, 'rt', encoding='utf-8') as cached:
+        packed = json.load(cached)
+    today = date.today().isoformat()
+    rows = []
+    for vid, code, model_index, place_index, year, year_simulated, soh, capacity, chemistry in packed['rows']:
+        manufacturer, model, category, powertrain = packed['models'][model_index]
+        state, city, location_simulated = packed['places'][place_index]
+        rows.append({'id': vid, 'vehicle_id': vid, 'battery_id': 'sim-battery-' + vid,
+                     'public_code': code, 'registry_manufacturer': manufacturer,
+                     'registry_model': model, 'registry_category': category,
+                     'registry_powertrain': powertrain, 'state': state,
+                     'municipality': city, 'location_simulated': location_simulated,
+                     'manufacture_year': year, 'year_simulated': year_simulated,
+                     'soh_percent': soh, 'capacity_kwh': capacity, 'chemistry': chemistry,
+                     'observed_at': today})
+    return rows
+
+
+def _simulated_snapshot(c, reference):
+    """Cache synthetic summaries briefly in RAM; never persist them in the database."""
+    q = select(s.vehicle_asset.c.id, s.vehicle_asset.c.manufacture_year,
+               s.vehicle_asset.c.state, s.vehicle_asset.c.municipality,
+               o.registry.c.public_code, o.model.c.model.label('registry_model'),
                o.model.c.manufacturer.label('registry_manufacturer'), o.model.c.vehicle_category.label('registry_category'),
                o.model.c.powertrain_type.label('registry_powertrain')).select_from(
         s.vehicle_asset.join(o.registry, o.registry.c.vehicle_id == s.vehicle_asset.c.id)
@@ -176,27 +259,99 @@ def simulated_rows(c, reference=None, state=None, municipality=None, category=No
         q = q.join(s.fleet_unit_membership, s.fleet_unit_membership.c.vehicle_id == s.vehicle_asset.c.id).join(
             s.fleet_publication, s.fleet_publication.c.id == s.fleet_unit_membership.c.publication_id).where(
             s.fleet_publication.c.reference_period == reference)
-    if category: q = q.where(o.model.c.vehicle_category == category)
-    if powertrain: q = q.where(o.model.c.powertrain_type == powertrain)
-    if model: q = q.where(o.model.c.model.ilike('%' + model + '%'))
-    locations = location_weights(c)
-    count = [0]
-    def candidates():
-      for row in c.execute(q).mappings():
-        item = dict(row)
-        profile = simulated_profile(item, {'manufacturer': item['registry_manufacturer'], 'model': item['registry_model'],
-            'powertrain_type': item['registry_powertrain'], 'vehicle_category': item['registry_category']}, locations)
-        if state and profile['state'] != state: continue
-        if municipality and profile['municipality'] != municipality: continue
-        item.update(profile)
-        item.update(status(profile['soh_percent'], threshold))
-        item['observed_at'] = date.today().isoformat()
-        item.pop('passport')
-        count[0] += 1
-        yield item
+    q = q.distinct()
+    signature = c.execute(select(func.count(), func.coalesce(func.sum(o.registry.c.revision), 0))
+        .where(o.registry.c.visible.is_(True))).one()
+    publication_version = c.execute(select(func.max(s.fleet_publication.c.finished_at))).scalar()
+    cache_key = (str(c.engine.url), id(c.engine), reference, tuple(signature), publication_version, date.today().isoformat())
+    with _simulated_cache_lock:
+        if cache_key in _simulated_cache:
+            return _simulated_cache[cache_key]
+        cache_path = None
+        if c.engine.dialect.name == 'postgresql':
+            cache_dir = db.ROOT / 'data' / 'cache'
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            filename = hashlib.sha256(repr((reference, tuple(signature), publication_version,
+                                            date.today().isoformat(), 'simulation-v3')).encode()).hexdigest()[:24]
+            cache_path = cache_dir / ('opportunities-' + filename + '.json.gz')
+            if cache_path.is_file():
+                try:
+                    rows = _load_snapshot(cache_path)
+                    _simulated_cache.clear()
+                    _simulated_cache[cache_key] = rows
+                    return rows
+                except (OSError, ValueError, json.JSONDecodeError):
+                    cache_path.unlink(missing_ok=True)
+        locations = location_weights(c)
+        rows = []
+        for row in c.execute(q).mappings():
+            item = dict(row)
+            seed = _simulated_seed(item, {'manufacturer': item['registry_manufacturer'], 'model': item['registry_model'],
+                'powertrain_type': item['registry_powertrain'], 'vehicle_category': item['registry_category']}, locations)
+            item.update(vehicle_id=item['id'], battery_id='sim-battery-' + item['id'],
+                        manufacture_year=seed['vehicle']['manufacture_year'], year_simulated=seed['year_simulated'],
+                        state=seed['state'], municipality=seed['city'], location_simulated=seed['simulated_location'],
+                        soh_percent=seed['soh'], capacity_kwh=seed['capacity'], chemistry=seed['chemistry'])
+            item['observed_at'] = date.today().isoformat()
+            rows.append(item)
+        _simulated_cache.clear()
+        _simulated_cache[cache_key] = rows
+        if cache_path:
+            Thread(target=_store_snapshot, args=(cache_path, rows), daemon=True).start()
+        return rows
+
+
+def _filtered_simulation(c, reference, state, municipality, category, powertrain, model):
+    model_term = (model or '').casefold()
+    return (item for item in _simulated_snapshot(c, reference)
+            if (not state or item['state'] == state)
+            and (not municipality or (item['municipality'] or '').casefold() == municipality.casefold())
+            and (not category or item['registry_category'] == category)
+            and (not powertrain or item['registry_powertrain'] == powertrain)
+            and (not model_term or model_term in (item['registry_model'] or '').casefold()))
+
+
+def simulated_rows(c, reference=None, state=None, municipality=None, category=None, powertrain=None, model=None, limit=50, offset=0, threshold=80, status_filter=None):
+    count = 0
     order = {'priority': 0, 'near': 1, 'monitor': 2}
-    output=heapq.nsmallest(offset+limit,candidates(),key=lambda x:(order[x['status']],x['distance_pct'],x['id']))
-    return {'items': output[offset:offset + limit], 'total': count[0], 'limit': limit, 'offset': offset}
+    def candidates():
+        nonlocal count
+        for source in _filtered_simulation(c, reference, state, municipality, category, powertrain, model):
+            item = {**source, **status(source['soh_percent'], threshold)}
+            if status_filter and item['status'] != status_filter: continue
+            count += 1
+            yield item
+    output = heapq.nsmallest(offset + limit, candidates(),
+        key=lambda x: (order[x['status']], x['distance_pct'], x['id']))
+    return {'items': output[offset:offset + limit], 'total': count, 'limit': limit, 'offset': offset}
+
+
+def overview(c, mode='real', reference=None, state=None, municipality=None, category=None, powertrain=None, model=None, threshold=80):
+    if mode == 'simulated':
+        sources = _filtered_simulation(c, reference, state, municipality, category, powertrain, model)
+    else:
+        sources = real_rows(c, reference, state, municipality, category, powertrain, model,
+                            limit=1000000, threshold=threshold)['items']
+    counts = Counter()
+    places = Counter()
+    models = Counter()
+    for item in sources:
+        label = status(item['soh_percent'], threshold, latest_at=item.get('observed_at'))['status'] if mode == 'simulated' else item['status']
+        counts[label] += 1
+        if label in ('priority', 'near') and item.get('state') and item.get('municipality'):
+            places[(item['state'], item['municipality'])] += 1
+        if label == 'priority':
+            models[(item.get('registry_manufacturer') or item.get('manufacturer'),
+                    item.get('registry_model') or item.get('model'),
+                    item.get('registry_powertrain') or item.get('powertrain_type'))] += 1
+    return {'total': sum(counts.values()), 'priority': counts['priority'], 'near': counts['near'],
+            'monitor': counts['monitor'], 'pending': counts['stale'] + counts['insufficient'],
+            'top_places': [{'state': uf, 'municipality': city, 'candidates': quantity}
+                           for (uf, city), quantity in places.most_common(5)],
+            'focus_models': [{'manufacturer': manufacturer, 'model': model,
+                              'powertrain_type': powertrain, 'candidates': quantity}
+                             for (manufacturer, model, powertrain), quantity in models.most_common(4)],
+            'mode': mode}
 
 
 def location_weights(c):

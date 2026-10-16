@@ -40,12 +40,22 @@ def set_opportunity_settings(body:OpportunitySettings,user=Depends(require_admin
 @router.get('/opportunities')
 def opportunity_list(reference:str|None=None,state:str|None=None,municipality:str|None=None,
                      vehicle_category:str|None=None,powertrain_type:str|None=None,model:str|None=None,
+                     status_filter:str|None=Query(None,pattern='^(priority|near|monitor|stale|insufficient)$'),
                      limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0)):
     settings=opportunity_settings()
     with db.engine.connect() as c:
         fn=opportunities.simulated_rows if settings['mode']=='simulated' else opportunities.real_rows
-        result=fn(c,reference,state,municipality,vehicle_category,powertrain_type,model,limit,offset,settings['soh_limit'])
+        result=fn(c,reference,state,municipality,vehicle_category,powertrain_type,model,limit,offset,settings['soh_limit'],status_filter)
     return {'mode':settings['mode'],'soh_limit':settings['soh_limit'],**result}
+
+@router.get('/opportunities/overview')
+def opportunity_overview(reference:str|None=None,state:str|None=None,municipality:str|None=None,
+                         vehicle_category:str|None=None,powertrain_type:str|None=None,model:str|None=None):
+    settings=opportunity_settings()
+    with db.engine.connect() as c:
+        result=opportunities.overview(c,settings['mode'],reference,state,municipality,
+                                      vehicle_category,powertrain_type,model,settings['soh_limit'])
+    return {'soh_limit':settings['soh_limit'],**result}
 
 @router.get('/opportunities/simulated/{vehicle_id}/passport')
 def simulated_opportunity_passport(vehicle_id:str):
@@ -85,6 +95,32 @@ def opportunity_regions(reference:str|None=None,state:str|None=None,municipality
         items=sorted(grouped.values(),key=lambda r:(-r['older_vehicles'],-r['vehicles'],str(r['state']),str(r['model'])))
         return {'items':items[offset:offset+limit],'total':len(items),'reference':source['reference_period'],
                 'note':'Cenário regional pela idade dos veículos. Não identifica bateria, saúde ou disponibilidade individual.'}
+
+@router.get('/opportunities/places')
+def opportunity_places(reference:str|None=None,state:str|None=None,vehicle_category:str|None=None,
+                       powertrain_type:str|None=None,model:str|None=None,limit:int=Query(8,ge=1,le=50)):
+    """Regional research leads from aggregate fleet age; no individual batteries inferred."""
+    with db.engine.connect() as c:
+        source=c.execute(select(s.source_snapshot).where(s.source_snapshot.c.provider=='SENATRAN',
+            s.source_snapshot.c.dataset_name.like('municipio-marca-modelo-ano-fabricacao%'),
+            s.source_snapshot.c.metric=='fleet_stock',s.source_snapshot.c.ingestion_status=='success',
+            *([s.source_snapshot.c.reference_period==reference] if reference else [])
+        ).order_by(s.source_snapshot.c.reference_period.desc(),s.source_snapshot.c.retrieved_at.desc()).limit(1)).mappings().first()
+        if not source:return {'items':[],'reference':reference}
+        q=select(s.aggregate.c.state,s.aggregate.c.municipality,
+                 func.sum(s.aggregate.c.quantity).label('vehicles')).where(
+            s.aggregate.c.source_snapshot_id==source['id'],
+            s.aggregate.c.manufacture_year.is_not(None),
+            s.aggregate.c.manufacture_year<=date.today().year-8,
+            s.aggregate.c.state.is_not(None),s.aggregate.c.municipality.is_not(None))
+        for col,val in ((s.aggregate.c.state,state),(s.aggregate.c.vehicle_category,vehicle_category),
+                        (s.aggregate.c.powertrain_type,powertrain_type)):
+            if val:q=q.where(col==val)
+        if model:q=q.where(s.aggregate.c.model.ilike('%'+model+'%'))
+        q=q.group_by(s.aggregate.c.state,s.aggregate.c.municipality).order_by(func.sum(s.aggregate.c.quantity).desc()).limit(limit)
+        return {'items':[dict(row) for row in c.execute(q).mappings()],
+                'reference':source['reference_period'],
+                'note':'Veículos com 8 anos ou mais; local de pesquisa, sem bateria individual identificada.'}
 
 LEGACY_SIZE_CATEGORIES=frozenset({'light','heavy','LMT'})
 
